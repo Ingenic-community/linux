@@ -14,6 +14,16 @@ config MMC_DEBUG
 	  added host drivers please don't invent their private macro for
 	  debugging.
 
+config MMC_SDHCI_INGENIC
+        tristate "Ingenic(XBurst2)  MMC/SD Card Controller(MSC) support"
+        depends on MACH_X2000
+        select MMC_SDHCI
+        help
+          This selects the Ingenic XBurst2 SD/MMC Card Controller MSC.
+          If you have platform with a SD/Multimedia Card slot and compact
+          with this version, say Y or M here.
+          If unsure, say N.
+
 config MMC_ARMMMCI
 	tristate "ARM AMBA Multimedia Card Interface support"
 	depends on ARM_AMBA
