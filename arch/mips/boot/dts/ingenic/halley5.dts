@@ -1,0 +1,313 @@
+/dts-v1/;
+
+#include "x2000.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/clock/ingenic,sysost.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+
+/ {
+	compatible = "ingenic,halley5", "ingenic,x2000";
+	model = "Ingenic Halley5 Development Board";
+
+	aliases: aliases {
+		serial0 = &uart0;
+		serial2 = &uart2;
+		serial3 = &uart3;
+	};
+
+	chosen {
+		stdout-path = "serial3:115200n8";
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x0 0x08000000>;
+	};
+
+	wlan_pwrseq: msc1-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+
+		reset-gpios = <&gpd 1 GPIO_ACTIVE_LOW>;
+		post-power-on-delay-ms = <200>;
+		enable-active-high;
+	};
+};
+
+&exclk {
+	clock-frequency = <24000000>;
+};
+
+&ost64 {
+	/* 6 MHz for the clocksource */
+	assigned-clocks = <&ost64 OST_CLK_GLOBAL_TIMER>;
+	assigned-clock-rates = <6000000>;
+};
+
+&ost32 {
+	/* 6 MHz for the system timers */
+	assigned-clocks = <&ost32 OST_CLK_EVENT_TIMER0>, <&ost32 OST_CLK_EVENT_TIMER1>;
+	assigned-clock-rates = <6000000>, <6000000>;
+};
+
+&uart3 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_uart3>;
+};
+
+&i2c4 {
+	status = "disable";
+
+	clock-frequency = <400000>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_i2c4>;
+
+	gt911: touchscreen@14{
+		compatible = "goodix,gt911";
+		reg = <0x14>;
+
+		interrupt-parent = <&gpc>;
+		interrupts = <27 IRQ_TYPE_EDGE_FALLING>;
+
+		irq-gpios = <&gpc 27 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&pdma {
+	status = "okay";
+};
+
+&msc0 {
+	status = "disable";
+
+	bus-width = <8>;
+	max-frequency = <100000000>;
+	voltage-ranges = <1800 3300>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_msc0>;
+
+	non-removable;
+	mmc-hs200-1_8v;
+};
+
+&msc1 {
+	status = "disable";
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+	bus-width = <4>;
+	max-frequency = <25000000>;
+	voltage-ranges = <1800 3300>;
+
+	pinctrl-names ="default";
+	pinctrl-0 = <&pins_msc1>;
+
+	no-1-8-v;
+	non-removable;
+	wifi-host;
+
+	mmc-pwrseq = <&wlan_pwrseq>;
+
+	ap6256: wifi@1 {
+		compatible = "brcm,bcm4329-fmac";
+		reg = <1>;
+
+		interrupt-parent = <&gpd>;
+		interrupts = <0 IRQ_TYPE_EDGE_FALLING>;
+		interrupt-names = "host-wake";
+
+		brcm,drive-strength = <8>;
+	};
+};
+
+&msc2 {
+	status = "okay";
+
+	bus-width = <4>;
+	max-frequency = <25000000>;
+	voltage-ranges = <1800 3300>;
+
+	pinctrl-names ="default";
+	pinctrl-0 = <&pins_msc2>;
+};
+
+&mac1 {
+	status = "okay";
+
+	phy-mode = "rgmii";
+	phy-handle = <&ip101gr>;
+
+	tx-clk-delay-ps = <1250>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_mac1>;
+
+	snps,reset-gpio = <&gpb 16 GPIO_ACTIVE_LOW>; /* PE21 */
+	snps,reset-active-low;
+	snps,reset-delays-us = <0 10000 30000>;
+};
+
+&mdio1 {
+	status = "okay";
+
+	ip101gr: ethernet-phy@0 {
+		compatible = "ethernet-phy-ieee802.3-c22";
+		reg = <0>;
+	};
+};
+
+&sfc {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_sfc>;
+	ingenic,sfc-max-frequency = <400000000>;
+	ingenic,use_ofpart_info  = /bits/ 8 <0>;
+	ingenic,spiflash_param_offset = <0>;
+
+	norflash@0 {
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			/* spi nor flash partition */
+			uboot@0 {
+				label = "uboot";
+				reg = <0x0000000 0x40000>;
+				/*read-only;*/
+			};
+
+			kernel@40000 {
+				label = "kernel";
+				reg = <0x40000 0x300000>;
+			};
+
+			rootfs@360000 {
+				label = "rootfs";
+				reg = <0x360000 0xca0000>;
+			};
+		};
+	};
+
+	nandflash@1 {
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			/* spi nand flash partition */
+			partition@0 {
+				label = "uboot";
+				reg = <0x0000000 0x100000>;
+				/*read-only;*/
+			};
+
+			partition@100000 {
+				label = "kernel";
+				reg = <0x100000 0x800000>;
+			};
+
+			partition@900000 {
+				label = "rootfs";
+				reg = <0x900000 0xf700000>;
+			};
+		};
+	};
+};
+
+&spi0 {
+	status = "disable";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_ssi0>;
+
+	spi-max-frequency = <54000000>;
+	num-cs = <2>;
+	cs-gpios = <0>, <0>;
+	/*cs-gpios = <&gpa 27 GPIO_ACTIVE_HIGH>, <&gpa 27 GPIO_ACTIVE_HIGH>;*/
+	ingenic,chnl = <0>;
+	ingenic,allow_cs_same = <1>;
+	ingenic,bus_num = <0>;
+	ingenic,has_dma_support = <0>;
+	ingenic,spi-src-clk = <1>;/*0.ext; 1.ssi*/
+
+	/* Add SPI interface device */
+	spidev: spidev@0 {
+		compatible = "rohm,dh2228fv";
+		reg = <0>;
+		spi-max-frequency = <10000000>;
+	};
+};
+
+&dtrng {
+	status = "okay";
+};
+
+&otg {
+	status = "okay";
+
+	g-use-dma;
+	dr_mode = "otg";
+};
+
+&pinctrl {
+	pins_uart2: uart2 {
+		function = "uart2";
+		groups = "uart2-data";
+		bias-pull-up;
+	};
+
+	pins_uart3: uart3 {
+		function = "uart3";
+		groups = "uart3-data-c", "uart3-hwflow-c";
+		bias-pull-up;
+	};
+
+	pins_i2c4: i2c4 {
+		function = "i2c4";
+		groups = "i2c4-data-c";
+		bias-pull-up;
+	};
+
+	pins_msc0: msc0 {
+		function = "mmc0";
+		groups = "mmc0-1bit", "mmc0-4bit", "mmc0-8bit";
+		bias-disable;
+	};
+
+	pins_msc1: msc1 {
+		function = "mmc1";
+		groups = "mmc1-1bit", "mmc1-4bit";
+		bias-disable;
+	};
+
+	pins_msc2: msc2 {
+		function = "mmc2";
+		groups = "mmc2-1bit", "mmc2-4bit";
+		bias-disable;
+	};
+
+	pins_mac1: mac1 {
+		function = "mac1";
+		groups = "mac1-rgmii";
+		bias-disable;
+	};
+
+	pins_sfc: sfc {
+		function = "sfc";
+		groups = "sfc0-e";
+		bias-disable;
+	};
+
+	pins_ssi0: ssi0 {
+		function = "sfc";
+		groups = "ssi0-dt-b", "ssi0-dr-b", "ssi0-clk-b", "ssi0-ce0-b";
+		bias-disable;
+	};
+};

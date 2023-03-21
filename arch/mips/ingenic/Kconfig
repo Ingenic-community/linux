@@ -9,6 +9,7 @@ config MACH_INGENIC_GENERIC
 	select MACH_JZ4780
 	select MACH_X1000
 	select MACH_X1830
+	select MACH_X2000
 
 choice
 	prompt "Machine type"
@@ -75,6 +76,14 @@ config X1501_SUDOMAKER_CANBOX
 	bool "SudoMaker CANBOX"
 	select MACH_X1000
 
+config X2000_CU2000_NEO
+	bool "YSH & ATIL CU2000 Module with Neo backplane"
+	select MACH_X2000
+
+config X2000_HALLEY5
+	bool "Ingenic Halley5 Development Board"
+	select MACH_X2000
+
 endchoice
 
 config MACH_JZ4725B
@@ -106,3 +115,13 @@ config MACH_X1830
 	bool
 	select SYS_HAS_CPU_MIPS32_R2
 	select SYS_SUPPORTS_HIGHMEM
+
+config MACH_X2000
+	bool
+	select GENERIC_CLOCKEVENTS_BROADCAST if SMP
+	select SYS_HAS_CPU_MIPS32_R5
+	select SYS_SUPPORTS_HIGHMEM
+	select SYS_SUPPORTS_SMP
+	select MIPS_O32_FP64_SUPPORT
+	select WEAK_ORDERING
+	select WEAK_REORDERING_BEYOND_LLSC
