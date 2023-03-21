@@ -20,6 +20,13 @@ config USB_DWC2
 
 if USB_DWC2
 
+config USB_DWC2_DISABLE_DMA
+	bool "Disable DMA"
+	default n
+	help
+	  Say Y here to disable DMA in the DWC2 Driver.
+	  You may want to do this if your RAM is precious.
+
 choice
 	bool "DWC2 Mode Selection"
 	default USB_DWC2_DUAL_ROLE if (USB && USB_GADGET)

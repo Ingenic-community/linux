@@ -411,6 +411,10 @@ static void dwc2_set_default_params(struct dwc2_hsotg *hsotg)
 	struct dwc2_core_params *p = &hsotg->params;
 	bool dma_capable = !(hw->arch == GHWCFG2_SLAVE_ONLY_ARCH);
 
+#if defined(CONFIG_USB_DWC2_DISABLE_DMA) || CONFIG_USB_DWC2_DISABLE_DMA
+	dma_capable = false;
+#endif
+
 	dwc2_set_param_otg_cap(hsotg);
 	dwc2_set_param_phy_type(hsotg);
 	dwc2_set_param_speed(hsotg);
@@ -455,6 +459,9 @@ static void dwc2_set_default_params(struct dwc2_hsotg *hsotg)
 		p->g_dma = dma_capable;
 		p->g_dma_desc = hw->dma_desc_enable;
 
+#if defined(CONFIG_USB_DWC2_DISABLE_DMA) || CONFIG_USB_DWC2_DISABLE_DMA
+		p->g_dma_desc = false;
+#endif
 		/*
 		 * The values for g_rx_fifo_size (2048) and
 		 * g_np_tx_fifo_size (1024) come from the legacy s3c
