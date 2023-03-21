@@ -17,31 +17,52 @@ maintainers:
 
 properties:
   compatible:
-    const: ingenic,jz4770-vpu-rproc
+    enum:
+      - ingenic,jz4760-vpu-rproc
+      - ingenic,jz4760b-vpu-rproc
+      - ingenic,jz4770-vpu-rproc
+      - ingenic,jz4775-vpu-rproc
+      - ingenic,jz4780-vpu-rproc
 
   reg:
-    items:
-      - description: aux registers
-      - description: tcsm0 registers
-      - description: tcsm1 registers
-      - description: sram registers
+    oneOf:
+      - items:
+          - description: aux registers
+          - description: tcsm0 registers
+          - description: tcsm1 registers
+          - description: sram registers
+      - items:
+          - description: aux registers
+          - description: tcsm registers
+          - description: sram registers
 
   reg-names:
-    items:
-      - const: aux
-      - const: tcsm0
-      - const: tcsm1
-      - const: sram
+    oneOf:
+      - items:
+          - const: aux
+          - const: tcsm0
+          - const: tcsm1
+          - const: sram
+      - items:
+          - const: aux
+          - const: tcsm
+          - const: sram
 
   clocks:
-    items:
-      - description: aux clock
-      - description: vpu clock
+    oneOf:
+      - items:
+          - description: aux clock
+          - description: vpu clock
+      - items:
+          - description: vpu clock
 
   clock-names:
-    items:
-      - const: aux
-      - const: vpu
+    oneOf:
+      - items:
+          - const: aux
+          - const: vpu
+      - items:
+          - const: vpu
 
   interrupts:
     maxItems: 1
@@ -60,7 +81,7 @@ examples:
   - |
     #include <dt-bindings/clock/ingenic,jz4770-cgu.h>
 
-    vpu: video-decoder@132a0000 {
+    video-decoder@132a0000 {
       compatible = "ingenic,jz4770-vpu-rproc";
 
       reg = <0x132a0000 0x20>, /* AUX */
@@ -74,4 +95,21 @@ examples:
 
       interrupt-parent = <&cpuintc>;
       interrupts = <3>;
+    };
+  - |
+    #include <dt-bindings/clock/jz4780-cgu.h>
+
+    video-decoder@132a0000 {
+      compatible = "ingenic,jz4780-vpu-rproc";
+
+      reg = <0x132a0000 0x20>, /* AUX */
+            <0x132c0000 0x8000>, /* TCSM */
+            <0x132f0000 0x4000>; /* SRAM */
+      reg-names = "aux", "tcsm", "sram";
+
+      clocks = <&cgu JZ4780_CLK_VPU>;
+      clock-names = "vpu";
+
+      interrupt-parent = <&intc>;
+      interrupts = <62>;
     };
