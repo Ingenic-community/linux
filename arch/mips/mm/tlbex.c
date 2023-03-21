@@ -587,6 +587,7 @@ void build_tlb_write_entry(u32 **p, struct uasm_label **l,
 		break;
 
 	case CPU_XBURST:
+	case CPU_XBURST2:
 		tlbw(p);
 		uasm_i_nop(p);
 		break;

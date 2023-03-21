@@ -10,6 +10,8 @@ endif
 include arch/mips/Kbuild.platforms
 obj-y := $(platform-y)
 
+obj-$(CONFIG_MACH_INGENIC)		+= ingenic/
+
 # make clean traverses $(obj-) without having included .config, so
 # everything ends up here
 obj- := $(platform-y)

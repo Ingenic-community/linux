@@ -140,6 +140,7 @@
 				 <&tcu TCU_CLK_TIMER4>;
 			clock-names = "timer0", "timer1", "timer2", "timer3", "timer4";
 		};
+
 	};
 
 	rtc: rtc@10003000 {
@@ -149,8 +150,10 @@
 		interrupt-parent = <&intc>;
 		interrupts = <32>;
 
-		clocks = <&cgu X1000_CLK_RTCLK>;
+		clocks = <&cgu X1000_CLK_RTC>;
 		clock-names = "rtc";
+
+		status = "okay";
 	};
 
 	pinctrl: pin-controller@10010000 {
@@ -269,11 +272,67 @@
 		interrupts = <8>;
 
 		clocks = <&cgu X1000_CLK_SSI>;
-		clock-names = "spi";
+		clock-names = "gate_ssi";
 
-		dmas = <&pdma X1000_DMA_SSI0_RX 0xffffffff>,
-			   <&pdma X1000_DMA_SSI0_TX 0xffffffff>;
+		dmas = <&pdma X1000_DMA_SSI0_RX>,
+			   <&pdma X1000_DMA_SSI0_TX>;
 		dma-names = "rx", "tx";
+
+		status = "disabled";
+	};
+
+	sfc: spi@13440000 {
+		compatible = "ingenic,x1000-sfc";
+		reg = <0x13440000 0x10000>;
+
+		interrupt-parent = <&intc>;
+		interrupts = <7>;
+
+		clocks = <&cgu X1000_CLK_SFC>;
+		clock-names = "sfc";
+
+		status = "disabled";
+	};
+
+	slcd: lcd-controller@13050000 {
+		compatible = "ingenic,x1000-slcd";
+		reg = <0x13050000 0x200>;
+
+		interrupt-parent = <&intc>;
+		interrupts = <31>;
+
+		clocks = <&cgu X1000_CLK_LCD>;
+		clock-names = "lcd";
+
+		status = "disabled";
+	};
+
+	aic: audio-controller@10020000 {
+		compatible = "ingenic,x1000-i2s";
+		reg = <0x10020000 0x94>;
+
+		#sound-dai-cells = <0>;
+
+		clocks = <&cgu X1000_CLK_I2S>, <&cgu X1000_CLK_AIC>;
+		clock-names = "i2s", "aic";
+
+		interrupt-parent = <&intc>;
+		interrupts = <1>;
+
+		dmas = <&pdma X1000_DMA_I2S0_RX>, <&pdma X1000_DMA_I2S0_TX>;
+		dma-names = "rx", "tx";
+
+		status = "disabled";
+	};
+
+	codec: audio-codec@100200a0 {
+		compatible = "ingenic,x1000-codec";
+		reg = <0x100200a4 0x8>;
+
+		#sound-dai-cells = <0>;
+
+		clocks = <&cgu X1000_CLK_AIC>;
+		clock-names = "aic";
 
 		status = "disabled";
 	};
@@ -321,15 +380,16 @@
 	};
 
 	pdma: dma-controller@13420000 {
-		compatible = "ingenic,x1000-dma";
-		reg = <0x13420000 0x400>, <0x13421000 0x40>;
+			compatible = "ingenic,x1000-pdma";
+			reg = <0x13420000 0x10000>;
+			interrupt-parent = <&intc>;
+			interrupt-names = "pdma", "pdmad";
+			interrupts = <10>, <11>;
+			#dma-channels = <8>;
+			#dma-cells = <1>;
 
-		#dma-cells = <2>;
-
-		interrupt-parent = <&intc>;
-		interrupts = <10>;
-
-		clocks = <&cgu X1000_CLK_PDMA>;
+			clocks = <&cgu X1000_CLK_PDMA>;
+			clock-names = "gate_pdma";
 	};
 
 	msc0: mmc@13450000 {
@@ -346,8 +406,8 @@
 		cap-mmc-highspeed;
 		cap-sdio-irq;
 
-		dmas = <&pdma X1000_DMA_MSC0_RX 0xffffffff>,
-			   <&pdma X1000_DMA_MSC0_TX 0xffffffff>;
+		dmas = <&pdma X1000_DMA_MSC0_RX>,
+			   <&pdma X1000_DMA_MSC0_TX>;
 		dma-names = "rx", "tx";
 
 		status = "disabled";
@@ -367,8 +427,8 @@
 		cap-mmc-highspeed;
 		cap-sdio-irq;
 
-		dmas = <&pdma X1000_DMA_MSC1_RX 0xffffffff>,
-			   <&pdma X1000_DMA_MSC1_TX 0xffffffff>;
+		dmas = <&pdma X1000_DMA_MSC1_RX>,
+			   <&pdma X1000_DMA_MSC1_TX>;
 		dma-names = "rx", "tx";
 
 		status = "disabled";
@@ -382,8 +442,11 @@
 		interrupts = <55>;
 		interrupt-names = "macirq";
 
-		clocks = <&cgu X1000_CLK_MAC>;
-		clock-names = "stmmaceth";
+		clocks = <&cgu X1000_CLK_MAC>, <&cgu X1000_CLK_MACPHY>;
+		clock-names = "stmmaceth", "pclk";
+
+		assigned-clocks = <&cgu X1000_CLK_MACPHY>;
+		assigned-clock-rates = <50000000>;
 
 		mode-reg = <&mac_phy_ctrl>;
 
@@ -414,6 +477,8 @@
 		g-rx-fifo-size = <768>;
 		g-np-tx-fifo-size = <256>;
 		g-tx-fifo-size = <256 256 256 256 256 256 256 512>;
+
+		disable-over-current;
 
 		status = "disabled";
 	};

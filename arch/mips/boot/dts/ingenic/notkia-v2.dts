@@ -1,0 +1,591 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+
+#include "x1000.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/clock/ingenic,sysost.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	compatible = "sudomaker,notkia-v2", "ingenic,x1000e";
+	model = "SudoMaker Notkia V2";
+
+	aliases {
+		serial2 = &uart2;
+	};
+
+	chosen {
+		stdout-path = "serial2:115200n8";
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x0 0x04000000>;
+	};
+
+	led-controller {
+		compatible = "pwm-leds";
+
+		led-bl {
+			label = "notkia::backlight";
+			pwms = <&pwm 4 6000000 0>;
+			max-brightness = <31>;
+			active-low;
+		};
+
+	};
+
+	swspi0 {
+		compatible = "spi-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		gpio-sck = <&gpb 17 0>;
+		gpio-mosi = <&gpb 18 0>;
+		gpio-miso = <&gpb 19 0>;
+
+		num-chipselects = <1>;
+		cs-gpios = <&gpb 20 GPIO_ACTIVE_LOW>;
+
+		spidev@0 {
+			compatible = "semtech,sx1301";
+			reg = <0>;
+			spi-max-frequency = <2000000>;
+		};
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+
+		btn_lf {
+			wakeup-source;
+			label = "Keypad LeftFunc";
+			linux,code = <KEY_F1>;
+			gpios = <&gpb 28 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_rf {
+			wakeup-source;
+			label = "Keypad RightFunc";
+			linux,code = <KEY_F2>;
+			gpios = <&gpb 29 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_answer {
+			wakeup-source;
+			label = "Keypad Answer";
+			linux,code = <KEY_F3>;
+			gpios = <&gpioexp2 14 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_hangup {
+			wakeup-source;
+			label = "Keypad Hangup";
+			linux,code = <KEY_F4>;
+			gpios = <&gpb 31 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_up {
+			wakeup-source;
+			label = "Keypad Up";
+			linux,code = <KEY_UP>;
+			gpios = <&gpioexp0 0 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_down {
+			wakeup-source;
+			label = "Keypad Down";
+			linux,code = <KEY_DOWN>;
+			gpios = <&gpioexp0 3 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_left {
+			wakeup-source;
+			label = "Keypad Left";
+			linux,code = <KEY_LEFT>;
+			gpios = <&gpioexp0 1 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_right {
+			wakeup-source;
+			label = "Keypad Right";
+			linux,code = <KEY_RIGHT>;
+			gpios = <&gpioexp0 2 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_center {
+			wakeup-source;
+			label = "Keypad Center";
+			linux,code = <KEY_ENTER>;
+			gpios = <&gpioexp2 15 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_1 {
+			wakeup-source;
+			label = "Keypad 1";
+			linux,code = <KEY_1>;
+			gpios = <&gpioexp0 7 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_2 {
+			wakeup-source;
+			label = "Keypad 2";
+			linux,code = <KEY_2>;
+			gpios = <&gpioexp0 5 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_3 {
+			wakeup-source;
+			label = "Keypad 3";
+			linux,code = <KEY_3>;
+			gpios = <&gpioexp0 4 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_4 {
+			wakeup-source;
+			label = "Keypad 4";
+			linux,code = <KEY_4>;
+			gpios = <&gpioexp0 9 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_5 {
+			wakeup-source;
+			label = "Keypad 5";
+			linux,code = <KEY_5>;
+			gpios = <&gpioexp0 8 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_6 {
+			wakeup-source;
+			label = "Keypad 6";
+			linux,code = <KEY_6>;
+			gpios = <&gpioexp0 6 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_7 {
+			wakeup-source;
+			label = "Keypad 7";
+			linux,code = <KEY_7>;
+			gpios = <&gpioexp0 12 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_8 {
+			wakeup-source;
+			label = "Keypad 8";
+			linux,code = <KEY_8>;
+			gpios = <&gpioexp0 11 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_9 {
+			wakeup-source;
+			label = "Keypad 9";
+			linux,code = <KEY_9>;
+			gpios = <&gpioexp0 10 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_0 {
+			wakeup-source;
+			label = "Keypad 0";
+			linux,code = <KEY_0>;
+			gpios = <&gpioexp0 14 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_star {
+			wakeup-source;
+			label = "Keypad Star";
+			linux,code = <KEY_LEFTCTRL>;
+			gpios = <&gpioexp0 15 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_pound {
+			wakeup-source;
+			label = "Keypad Pound";
+			linux,code = <KEY_LEFTSHIFT>;
+			gpios = <&gpioexp0 13 GPIO_ACTIVE_LOW>;
+		};
+
+	};
+
+	wlan_pwrseq: msc1-pwrseq {
+			compatible = "mmc-pwrseq-simple";
+
+			reset-gpios = <&gpioexp2 1 GPIO_ACTIVE_LOW>;
+			post-power-on-delay-ms = <200>;
+	};
+
+	sound {
+		compatible = "simple-audio-card";
+
+		simple-audio-card,name = "x1000-aic";
+		simple-audio-card,mclk-fs = <256>;
+
+		status = "okay";
+
+		playback_link: simple-audio-card,dai-link@1 {
+				format = "i2s";
+
+				bitclock-master = <&codec_nau88c22>;
+				frame-master = <&codec_nau88c22>;
+
+				p_cpu_dai: cpu {
+					sound-dai = <&aic>;
+				};
+
+				p_codec_dai: codec {
+					sound-dai = <&codec_nau88c22>;
+				};
+			};
+	};
+
+	codec_out: i2s-generic {
+				#address-cells = <0>;
+				#size-cells = <0>;
+				#sound-dai-cells = <0>;
+				compatible = "linux,spdif-dit";
+				status = "okay";
+	};
+};
+
+&exclk {
+	clock-frequency = <24000000>;
+};
+
+&cgu {
+	assigned-clocks = <&cgu X1000_CLK_SSIMUX>, <&cgu X1000_CLK_RTC>, <&cgu X1000_CLK_I2S>;
+	assigned-clock-parents = <&cgu X1000_CLK_SSIPLL_DIV2>, <&cgu X1000_CLK_EXCLK_DIV512>, <&cgu X1000_CLK_MPLL>;
+};
+
+&ost {
+	/* 1500 kHz for the system timer and clocksource */
+	assigned-clocks = <&ost OST_CLK_EVENT_TIMER>, <&ost OST_CLK_GLOBAL_TIMER>;
+	assigned-clock-rates = <1500000>, <1500000>;
+};
+
+&aic {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_i2s>;
+};
+
+&ssi {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_spi0>;
+
+	num-cs = <1>;
+	cs-gpios = <0>;
+
+	lcd: lcd@0 {
+		compatible = "sitronix,st7789v";
+		reg = <0>;
+		spi-max-frequency = <100000000>;
+		rotate = <180>;
+		//width = <240>;
+		//height = <320>;
+		txbuflen = <16256>;
+		buswidth = <8>;
+		fps = <30>;
+		dc-gpios = <&gpb 7 0>;
+		reset-gpios = <&gpb 10 GPIO_ACTIVE_LOW>;
+		debug = <0x4000000>;
+
+		init = <
+		0x01000011	// SLPOUT
+		0x02000078
+		0x0100003A 0x05	// COLMOD
+
+		0x01000021	// INVON
+		0x01000029	// DISPON
+		>;
+
+	};
+
+};
+
+&uart0 {
+		status = "okay";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&pins_uart0>;
+
+		uart-has-rtscts;
+
+		bluetooth {
+			compatible = "brcm,bcm43438-bt";
+			max-speed = <1000000>;
+			brcm,bt-pcm-int-params = [01 02 00 01 01];
+			reset-gpios = <&gpioexp2 2 GPIO_ACTIVE_LOW>;
+			device-wakeup-gpios = <&gpioexp2 4 GPIO_ACTIVE_HIGH>;
+			interrupt-parent = <&gpioexp2>;
+			interrupts = <3 IRQ_TYPE_EDGE_FALLING>;
+		};
+};
+
+&uart1 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_uart1>;
+};
+
+&uart2 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_uart2>;
+};
+
+&i2c0 {
+	status = "okay";
+
+	clock-frequency = <100000>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_i2c0>;
+
+	rtc@32 {
+		compatible = "epson,rx8900";
+		reg = <0x32>;
+
+		interrupt-parent = <&gpioexp2>;
+		interrupts = <10 IRQ_TYPE_EDGE_FALLING>;
+		wakeup-source;
+
+		epson,vdet-disable;
+		trickle-diode-disable;
+	};
+
+	battery@36 {
+		compatible = "maxim,max17048";
+		reg = <0x36>;
+
+		interrupt-parent = <&gpioexp2>;
+		interrupts = <6 IRQ_TYPE_EDGE_FALLING>;
+		wakeup-source;
+
+		maxim,alert-low-soc-level = <10>;
+	};
+
+	charger@6a {
+		compatible = "ti,bq25890";
+		reg = <0x6a>;
+
+		interrupt-parent = <&gpioexp2>;
+		interrupts = <9 IRQ_TYPE_EDGE_FALLING>;
+		wakeup-source;
+
+		ti,battery-regulation-voltage = <4200000>;
+		ti,charge-current = <500000>;
+		ti,termination-current = <25000>;
+		ti,precharge-current = <50000>;
+		ti,minimum-sys-voltage = <3600000>;
+		ti,boost-voltage = <5100000>;
+		ti,boost-max-current = <2400000>;
+		ti,thermal-regulation-threshold = <120>;
+	};
+
+	codec_nau88c22: nau88c22@1a {
+		compatible = "nuvoton,nau8822";
+		reg = <0x1a>;
+
+		#sound-dai-cells = <0>;
+	};
+
+	gpioexp0: pca9555@20 {
+		compatible = "nxp,pca9555";
+		reg = <0x20>;
+		gpio-controller;
+		wakeup-source;
+		#gpio-cells = <2>;
+		interrupt-parent = <&gpc>;
+		interrupts = <19 IRQ_TYPE_EDGE_FALLING>;
+		interrupt-controller;
+		#interrupt-cells = <2>;
+	};
+
+	gpioexp2: pca9555@22 {
+		compatible = "nxp,pca9555";
+		reg = <0x22>;
+		gpio-controller;
+		wakeup-source;
+		#gpio-cells = <2>;
+		interrupt-parent = <&gpc>;
+		interrupts = <20 IRQ_TYPE_EDGE_FALLING>;
+		interrupt-controller;
+		#interrupt-cells = <2>;
+	};
+};
+
+
+&sfc {
+	status = "okay";
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_sfc>;
+
+	flash: spinor@0 {
+		compatible = "jedec,spi-nor";
+		spi-max-frequency = <133000000>;
+		reg = <0>;
+
+		spi-rx-bus-width = <4>;
+		spi-tx-bus-width = <4>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			uboot@0 {
+				reg = <0x0 0x40000>;
+				read-only;
+			};
+
+			kernel@40000 {
+				reg = <0x40000 0x300000>;
+				read-only;
+			};
+
+			rootfs@840000 {
+				reg = <0x340000 0x10000000>;
+			};
+		};
+	};
+
+};
+
+&i2c1 {
+	status = "okay";
+
+	clock-frequency = <100000>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_i2c1>;
+};
+
+&msc0 {
+	status = "okay";
+
+	bus-width = <4>;
+	max-frequency = <50000000>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_msc0>;
+
+	non-removable;
+};
+
+&msc1 {
+		status = "okay";
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+		bus-width = <4>;
+		max-frequency = <25000000>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&pins_msc1>;
+
+		non-removable;
+		keep-power-in-suspend;
+		wakeup-source;
+
+		mmc-pwrseq = <&wlan_pwrseq>;
+
+		ap6212a: wifi@1 {
+				compatible = "brcm,bcm4329-fmac";
+				reg = <1>;
+
+				//interrupt-parent = <&gpb>;
+				//interrupts = <26 IRQ_TYPE_EDGE_FALLING>;
+				//interrupt-names = "host-wake";
+				wakeup-source;
+
+				brcm,drive-strength = <10>;
+		};
+};
+
+&otg_phy {
+	status = "okay";
+};
+
+&otg {
+	status = "okay";
+	disable-over-current;
+};
+
+&pwm {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_pwm0>, <&pins_pwm4>;
+};
+
+&pinctrl {
+	pins_pwm0: pwm0 {
+		function = "pwm0";
+		groups = "pwm0";
+	};
+
+	pins_pwm4: pwm4 {
+		function = "pwm4";
+		groups = "pwm4";
+	};
+
+	pins_sfc: sfc {
+		function = "sfc";
+		groups = "sfc-data", "sfc-clk", "sfc-ce";
+	};
+
+	pins_spi0: spi0 {
+			function = "ssi";
+			groups = "ssi-dt-d", "ssi-dr-d", "ssi-clk-d", "ssi-ce0-d";
+	};
+
+	pins_uart0: uart0 {
+		function = "uart0";
+		groups = "uart0-data", "uart0-hwflow";
+	};
+
+	pins_uart1: uart1 {
+		function = "uart1";
+		groups = "uart1-data-a";
+	};
+
+	pins_uart2: uart2 {
+		function = "uart2";
+		groups = "uart2-data-d";
+		bias-pull-up;
+	};
+
+	pins_i2c0: i2c0 {
+		function = "i2c0";
+		groups = "i2c0-data";
+		bias-disable;
+	};
+
+	pins_i2c1: i2c1 {
+		function = "i2c1";
+		groups = "i2c1-data-a";
+	};
+
+	pins_i2s: i2s {
+		function = "i2s";
+		groups = "i2s-data-tx", "i2s-data-rx", "i2s-clk-txrx", "i2s-sysclk";
+	};
+
+	pins_msc0: msc0 {
+		function = "mmc0";
+		groups = "mmc0-1bit", "mmc0-4bit";
+	};
+
+	pins_msc1: msc1 {
+		function = "mmc1";
+		groups = "mmc1-1bit", "mmc1-4bit";
+	};
+};

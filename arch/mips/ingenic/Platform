@@ -1,0 +1,2 @@
+cflags-$(CONFIG_MACH_INGENIC_SOC)	+= -I$(srctree)/arch/mips/include/asm/mach-ingenic
+#load-$(CONFIG_MACH_INGENIC_SOC)		+= 0xffffffff80100000

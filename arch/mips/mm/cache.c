@@ -193,6 +193,7 @@ void cpu_cache_init(void)
 
 		r3k_cache_init();
 	}
+
 	if (cpu_has_4k_cache) {
 		extern void __weak r4k_cache_init(void);
 
@@ -203,6 +204,12 @@ void cpu_cache_init(void)
 		extern void __weak octeon_cache_init(void);
 
 		octeon_cache_init();
+	}
+
+	if (cpu_has_ingenic_cache) {
+		extern void __weak ingenic_cache_init(void);
+
+		ingenic_cache_init();
 	}
 
 	setup_protection_map();

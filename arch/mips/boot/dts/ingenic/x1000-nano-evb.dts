@@ -1,0 +1,398 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+
+#include "x1000.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/clock/ingenic,sysost.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	compatible = "sudomaker,x1000-nano-evb", "ingenic,x1000e";
+	model = "SudoMaker X1000 Nano EVB";
+
+	aliases {
+		serial2 = &uart2;
+	};
+
+	chosen {
+		stdout-path = "serial2:115200n8";
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x0 0x04000000>;
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+
+		btn_lf {
+			wakeup-source;
+			label = "BOOT0";
+			linux,code = <KEY_F1>;
+			gpios = <&gpb 28 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_rf {
+			wakeup-source;
+			label = "BOOT1";
+			linux,code = <KEY_F2>;
+			gpios = <&gpb 29 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_wkup {
+			wakeup-source;
+			label = "WKUP";
+			linux,code = <KEY_F3>;
+			gpios = <&gpb 31 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	phy_vdd: regulator-phy_vdd {
+				compatible = "regulator-fixed";
+
+				regulator-name = "phy_vdd";
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+
+				gpio = <&gpc 22 GPIO_ACTIVE_HIGH>;
+				enable-active-high;
+				regulator-always-on;
+	};
+
+	sound {
+		compatible = "simple-audio-card";
+
+		simple-audio-card,name = "x1000-aic";
+
+		status = "okay";
+
+		simple-audio-card,bitclock-master = <&dai_codec>;
+		simple-audio-card,frame-master = <&dai_codec>;
+
+		simple-audio-card,format = "i2s";
+
+		dai_cpu: simple-audio-card,cpu {
+			sound-dai = <&aic>;
+			system-clock-frequency = <24000000>;
+			system-clock-direction-out;
+		};
+
+		dai_codec: simple-audio-card,codec {
+			sound-dai = <&codec>;
+			system-clock-frequency = <24000000>;
+		};
+	};
+
+	codec_out: i2s-generic {
+				#address-cells = <0>;
+				#size-cells = <0>;
+				#sound-dai-cells = <0>;
+				compatible = "linux,spdif-dit";
+				status = "okay";
+	};
+
+	clk_8m: clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <8000000>;
+		clock-accuracy = <100>;
+	};
+};
+
+&exclk {
+	clock-frequency = <24000000>;
+};
+
+&cgu {
+	assigned-clocks = <&cgu X1000_CLK_SSIMUX>, <&cgu X1000_CLK_RTC>;
+	assigned-clock-parents = <&cgu X1000_CLK_SSIPLL_DIV2>, <&cgu X1000_CLK_EXCLK_DIV512>;
+};
+
+&ost {
+	/* 1500 kHz for the system timer and clocksource */
+	assigned-clocks = <&ost OST_CLK_EVENT_TIMER>, <&ost OST_CLK_GLOBAL_TIMER>;
+	assigned-clock-rates = <1500000>, <1500000>;
+};
+
+&aic {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_i2s>;
+
+	use-internal-codec;
+};
+
+&codec {
+	status = "okay";
+};
+
+&slcd {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_slcd>;
+
+	reset-gpios = <&gpc 25 GPIO_ACTIVE_LOW>;
+	rd-gpios = <&gpb 16 GPIO_ACTIVE_LOW>;
+
+	width = <240>;
+	height = <320>;
+	buswidth = <8>;
+	bpp = <24>;
+	bus-max-speed = <15000000>;
+
+	init-sequence = /bits/ 16 <
+		1 0x11 // Sleep out
+		3 120 // Sleep 120ms
+		1 0x36 2 0x00
+		1 0x3a 2 0x06 // RGB888
+		1 0xb2 2 0x01 2 0x01 2 0x00 2 0x33 2 0x33
+		1 0xb7 2 0x35
+		1 0xbb 2 0x28
+		1 0xc0 2 0x2c
+		1 0xc2 2 0x01
+		1 0xc3 2 0x0b
+		1 0xc4 2 0x20
+		1 0xc6 2 0x05 // Frame Rate Control in Normal Mode
+		1 0x0e 2 0x00 2 0x80 // TE enable
+		1 0xd0 2 0xa4 2 0xa1
+		1 0x29 // Display on
+	>;
+
+};
+
+&ssi {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_spi0>;
+
+	num-cs = <1>;
+	cs-gpios = <0>;
+
+	spidev: spidev@0 {
+		reg = <0>;
+		compatible = "semtech,sx1301";
+
+		spi-max-frequency = <12000000>;
+	};
+
+};
+
+&uart0 {
+		status = "okay";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&pins_uart0>;
+
+		uart-has-rtscts;
+
+		bluetooth {
+				compatible = "brcm,bcm43438-bt";
+				max-speed = <1000000>;
+				brcm,bt-pcm-int-params = [01 02 00 01 01];
+				reset-gpios = <&gpc 17 GPIO_ACTIVE_LOW>;
+				device-wakeup-gpios = <&gpc 19 GPIO_ACTIVE_HIGH>;
+				interrupt-parent = <&gpc>;
+				interrupts = <20 IRQ_TYPE_EDGE_FALLING>;
+		};
+};
+
+&uart2 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_uart2>;
+};
+
+&i2c0 {
+	status = "okay";
+
+	clock-frequency = <100000>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_i2c0>;
+};
+
+
+&sfc {
+	status = "okay";
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_sfc>;
+
+	flash: spinor@0 {
+		compatible = "jedec,spi-nor";
+		spi-max-frequency = <133000000>;
+		reg = <0>;
+
+		spi-rx-bus-width = <4>;
+		spi-tx-bus-width = <4>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			uboot@0 {
+				reg = <0x0 0x40000>;
+			};
+
+			kernel@40000 {
+				reg = <0x40000 0x300000>;
+				read-only;
+			};
+
+			rootfs@340000 {
+				reg = <0x340000 0xA00000>;
+			};
+
+			overlay@D40000 {
+				reg = <0xD40000 0x1000000>;
+			};
+		};
+	};
+
+};
+
+&msc0 {
+	status = "okay";
+
+	bus-width = <4>;
+	max-frequency = <50000000>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_msc0>;
+
+	non-removable;
+};
+
+&msc1 {
+		status = "okay";
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+		bus-width = <4>;
+		max-frequency = <25000000>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&pins_msc1>;
+
+		non-removable;
+		cap-power-off-card;
+		keep-power-in-suspend;
+		wakeup-source;
+
+		//mmc-pwrseq = <&wlan_pwrseq>;
+
+		ap6212a: wifi@1 {
+				compatible = "brcm,bcm4329-fmac";
+				reg = <1>;
+
+				interrupt-parent = <&gpc>;
+				interrupts = <16 IRQ_TYPE_EDGE_FALLING>;
+				interrupt-names = "host-wake";
+				wakeup-source;
+
+				reset-gpios = <&gpc 17 GPIO_ACTIVE_LOW>;
+
+				brcm,drive-strength = <10>;
+		};
+};
+
+&mac {
+	status = "okay";
+
+	phy-mode = "rmii";
+	phy-handle = <&lan8720a>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_mac>;
+};
+
+&mdio {
+	status = "okay";
+
+	lan8720a: ethernet-phy@0 {
+		compatible = "ethernet-phy-id0007.c0f0", "ethernet-phy-ieee802.3-c22";
+		reg = <0>;
+
+		interrupt-parent = <&gpc>;
+		interrupts = <21 IRQ_TYPE_LEVEL_LOW>;
+		wakeup-source;
+
+		reset-names = "phy";
+		reset-gpios = <&gpb 25 GPIO_ACTIVE_LOW>;
+		reset-assert-us = <10000>;
+		reset-deassert-us = <30000>;
+	};
+};
+
+&otg_phy {
+	status = "okay";
+};
+
+&otg {
+	status = "okay";
+};
+
+&pinctrl {
+
+	pins_sfc: sfc {
+		function = "sfc";
+		groups = "sfc-data", "sfc-clk", "sfc-ce";
+	};
+
+	pins_slcd: slcd {
+		function = "lcd";
+		groups = "lcd-8bit";
+	};
+
+	pins_spi0: spi0 {
+			function = "ssi";
+			groups = "ssi-dt-d", "ssi-dr-d", "ssi-clk-d", "ssi-ce0-d";
+	};
+
+	pins_uart0: uart0 {
+		function = "uart0";
+		groups = "uart0-data", "uart0-hwflow";
+	};
+
+	pins_uart2: uart2 {
+		function = "uart2";
+		groups = "uart2-data-d";
+	};
+
+	pins_i2c0: i2c0 {
+		function = "i2c0";
+		groups = "i2c0-data";
+		bias-disable;
+	};
+
+	pins_i2s: i2s {
+		function = "i2s";
+		groups = "i2s-data-tx", "i2s-data-rx", "i2s-clk-txrx", "i2s-sysclk";
+	};
+
+	pins_msc0: msc0 {
+		function = "mmc0";
+		groups = "mmc0-1bit", "mmc0-4bit";
+	};
+
+	pins_msc1: msc1 {
+		function = "mmc1";
+		groups = "mmc1-1bit", "mmc1-4bit";
+	};
+
+	pins_mac: mac {
+		function = "mac";
+		groups = "mac";
+		bias-disable;
+	};
+};

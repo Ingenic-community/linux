@@ -1761,12 +1761,12 @@ static inline void cpu_probe_ingenic(struct cpuinfo_mips *c, unsigned int cpu)
 	case PRID_IMP_XBURST_REV1:
 
 		/*
-		 * The XBurst core by default attempts to avoid branch target
-		 * buffer lookups by detecting & special casing loops. This
-		 * feature will cause BogoMIPS and lpj calculate in error.
+		 * The XBurst®1 Rev1 CPUs by default attempts to avoid branch
+		 * target buffer lookups by detecting & special casing loops.
+		 * This feature will cause BogoMIPS and lpj calculate in error.
 		 * Set cp0 config7 bit 4 to disable this feature.
 		 */
-		set_c0_config7(MIPS_CONF7_BTB_LOOP_EN);
+		set_c0_config7(XBURST_CONF7_BTB_LOOP_EN);
 
 		switch (c->processor_id & PRID_COMP_MASK) {
 
@@ -1785,17 +1785,16 @@ static inline void cpu_probe_ingenic(struct cpuinfo_mips *c, unsigned int cpu)
 			fallthrough;
 
 		/*
-		 * The config0 register in the XBurst CPUs with a processor ID of
-		 * PRID_COMP_INGENIC_D0 or PRID_COMP_INGENIC_D1 has an abandoned
-		 * huge page tlb mode, this mode is not compatible with the MIPS
-		 * standard, it will cause tlbmiss and into an infinite loop
-		 * (line 21 in the tlb-funcs.S) when starting the init process.
-		 * After chip reset, the default is HPTLB mode, Write 0xa9000000
-		 * to cp0 register 5 sel 4 to switch back to VTLB mode to prevent
-		 * getting stuck.
+		 * The XBurst®1 Rev1 CPUs with a company ID of PRID_COMP_INGENIC_D0
+		 * or PRID_COMP_INGENIC_D1 has an abandoned huge page tlb mode, this
+		 * mode is not compatible with the MIPS standard, it will cause tlb
+		 * miss and into an infinite loop (line 21 in the tlb-funcs.S) when
+		 * starting the init process. After chip reset, the default is HPTLB
+		 * mode, Write 0xa9000000 to pagectl register (cp0 register 5 sel 4)
+		 * to switch back to VTLB mode to prevent getting stuck.
 		 */
 		case PRID_COMP_INGENIC_D1:
-			write_c0_page_ctrl(XBURST_PAGECTRL_HPTLB_DIS);
+			write_c0_ingenic_pagectl(XBURST_PAGECTL_HPTLB_DIS);
 			break;
 
 		default:
@@ -1813,7 +1812,7 @@ static inline void cpu_probe_ingenic(struct cpuinfo_mips *c, unsigned int cpu)
 
 	/* XBurst®2 with MXU2.1 SIMD ISA */
 	case PRID_IMP_XBURST2:
-		c->cputype = CPU_XBURST;
+		c->cputype = CPU_XBURST2;
 		__cpu_name[cpu] = "Ingenic XBurst II";
 		break;
 

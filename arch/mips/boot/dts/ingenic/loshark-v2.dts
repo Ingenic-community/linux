@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+
+#include "x1501.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/clock/ingenic,sysost.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	compatible = "sudomaker,loshark-v2", "ingenic,x1501";
+	model = "SudoMaker LoShark v2";
+
+	aliases {
+		serial2 = &uart2;
+	};
+
+	chosen {
+		stdout-path = "serial2:115200n8";
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x0 0x00800000>;
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+
+		btn_lf {
+			wakeup-source;
+			label = "BOOT0";
+			linux,code = <KEY_F1>;
+			gpios = <&gpb 28 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_rf {
+			wakeup-source;
+			label = "BOOT1";
+			linux,code = <KEY_F2>;
+			gpios = <&gpb 29 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
+
+&exclk {
+	clock-frequency = <24000000>;
+};
+
+&cgu {
+	assigned-clocks = <&cgu X1000_CLK_SSIMUX>, <&cgu X1000_CLK_RTC>;
+	assigned-clock-parents = <&cgu X1000_CLK_SSIPLL_DIV2>, <&cgu X1000_CLK_EXCLK_DIV512>;
+};
+
+&ost {
+	/* 1500 kHz for the system timer and clocksource */
+	assigned-clocks = <&ost OST_CLK_EVENT_TIMER>, <&ost OST_CLK_GLOBAL_TIMER>;
+	assigned-clock-rates = <1500000>, <1500000>;
+};
+
+
+&ssi {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_spi0>;
+
+	num-cs = <1>;
+	cs-gpios = <0>;
+
+	lora: sx126x@0 {
+		reg = <0>;
+		compatible = "semtech,sx1301";
+
+		spi-max-frequency = <12000000>;
+	};
+};
+
+&uart2 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_uart2>;
+};
+
+&sfc {
+	status = "okay";
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_sfc>;
+
+	flash: xt25f16b@0 {
+		compatible = "xtx,xt25f16b-kgd", "xtx,xt25f16b", "jedec,spi-nor";
+		spi-max-frequency = <133000000>;
+		reg = <0>;
+
+		spi-rx-bus-width = <4>;
+		spi-tx-bus-width = <4>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			boot {
+				reg = <0x0 0x4000>;
+			};
+
+			kernel {
+				reg = <0x4000 0xC8000>;
+			};
+
+			rootfs {
+				reg = <0xCC000 0x134000>;
+			};
+
+		};
+	};
+};
+
+&otg_phy {
+	status = "okay";
+	wakeup-source;
+};
+
+&otg {
+	status = "okay";
+	wakeup-source;
+};
+
+&pinctrl {
+	pins_sfc: sfc {
+		function = "sfc";
+		groups = "sfc-data", "sfc-clk", "sfc-ce";
+		bias-disable;
+	};
+
+	pins_spi0: spi0 {
+		function = "ssi";
+		groups = "ssi-dt", "ssi-dr", "ssi-clk", "ssi-ce0";
+	};
+
+	pins_uart2: uart2 {
+		function = "uart2";
+		groups = "uart2-data-a";
+	};
+};

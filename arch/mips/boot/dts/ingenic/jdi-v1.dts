@@ -1,0 +1,137 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+
+#include "x1000.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/clock/ingenic,sysost.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	compatible = "ingenic,jdi-v1", "ingenic,x1000";
+	model = "Ingenic JDI v1";
+
+	aliases {
+		serial2 = &uart2;
+	};
+
+	chosen {
+		stdout-path = "serial2:115200n8";
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x0 0x02000000>;
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+
+		btn_lf {
+			wakeup-source;
+			label = "BOOT0";
+			linux,code = <KEY_F1>;
+			gpios = <&gpb 28 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_rf {
+			wakeup-source;
+			label = "BOOT1";
+			linux,code = <KEY_F2>;
+			gpios = <&gpb 29 GPIO_ACTIVE_LOW>;
+		};
+
+		btn_wkup {
+			wakeup-source;
+			label = "WKUP";
+			linux,code = <KEY_F3>;
+			gpios = <&gpb 31 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+};
+
+&exclk {
+	clock-frequency = <24000000>;
+};
+
+&cgu {
+	assigned-clocks = <&cgu X1000_CLK_SSIMUX>, <&cgu X1000_CLK_RTC>;
+	assigned-clock-parents = <&cgu X1000_CLK_SSIPLL_DIV2>, <&cgu X1000_CLK_EXCLK_DIV512>;
+};
+
+&ost {
+	/* 1500 kHz for the system timer and clocksource */
+	assigned-clocks = <&ost OST_CLK_EVENT_TIMER>, <&ost OST_CLK_GLOBAL_TIMER>;
+	assigned-clock-rates = <1500000>, <1500000>;
+};
+
+&uart2 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_uart2>;
+};
+
+&sfc {
+	status = "okay";
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_sfc>;
+
+	flash: spinor@0 {
+		compatible = "jedec,spi-nor";
+		spi-max-frequency = <133000000>;
+		reg = <0>;
+
+		spi-rx-bus-width = <4>;
+		spi-tx-bus-width = <4>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			uboot@0 {
+				reg = <0x0 0x40000>;
+			};
+
+			kernel@40000 {
+				reg = <0x40000 0x300000>;
+				read-only;
+			};
+
+			rootfs@340000 {
+				reg = <0x340000 0xA00000>;
+			};
+
+			overlay@D40000 {
+				reg = <0xD40000 0x1000000>;
+			};
+		};
+	};
+
+};
+
+&otg_phy {
+	status = "okay";
+};
+
+&otg {
+	status = "okay";
+};
+
+&pinctrl {
+	pins_sfc: sfc {
+		function = "sfc";
+		groups = "sfc-data", "sfc-clk", "sfc-ce";
+	};
+
+	pins_uart2: uart2 {
+		function = "uart2";
+		groups = "uart2-data-d";
+	};
+};

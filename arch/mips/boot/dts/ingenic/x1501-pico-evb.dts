@@ -1,0 +1,236 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+
+#include "x1501.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/clock/ingenic,sysost.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	compatible = "sudomaker,x1501-pico-evb", "ingenic,x1501";
+	model = "SudoMaker X1501 Pico EVB";
+
+	aliases {
+		serial2 = &uart2;
+	};
+
+	chosen {
+		stdout-path = "serial2:115200n8";
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x0 0x800000>;
+	};
+
+};
+
+&exclk {
+	clock-frequency = <24000000>;
+};
+
+&cgu {
+	assigned-clocks = <&cgu X1000_CLK_SSIMUX>, <&cgu X1000_CLK_RTC>;
+	assigned-clock-parents = <&cgu X1000_CLK_SSIPLL_DIV2>, <&cgu X1000_CLK_EXCLK_DIV512>;
+};
+
+&ost {
+	/* 1500 kHz for the system timer and clocksource */
+	assigned-clocks = <&ost OST_CLK_EVENT_TIMER>, <&ost OST_CLK_GLOBAL_TIMER>;
+	assigned-clock-rates = <1500000>, <1500000>;
+};
+
+&ssi {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_spi0>;
+
+	num-cs = <4>;
+	cs-gpios = <0>, <&gpa 18 GPIO_ACTIVE_LOW>, <&gpa 17 GPIO_ACTIVE_LOW>, <&gpa 16 GPIO_ACTIVE_LOW>;
+
+	lcd: lcd@0 {
+		reg = <0>;
+		compatible = "sitronix,st7735s";
+
+		spi-max-frequency = <100000000>;
+		rotate = <270>;
+		width = <128>;
+		height = <160>;
+		txbuflen = <16384>;
+		buswidth = <8>;
+		fps = <60>;
+		dc-gpios = <&gpa 10 0>;
+		reset-gpios = <&gpa 11 GPIO_ACTIVE_LOW>;
+		debug = <0x4000000>;
+
+		gamma = "02 1c 07 12 37 32 29 2d 29 25 2B 39 00 01 03 10\n03 1d 07 06 2E 2C 29 2D 2E 2E 37 3F 00 00 02 10";
+
+	};
+
+	ts: tsc2046@1 {
+		reg = <1>;
+		compatible = "ti,tsc2046";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&pins_xpt2046>;
+
+		interrupt-parent = <&gpa>;
+		interrupts = <19 0>;
+		wakeup-source;
+
+		spi-max-frequency = <1000000>;
+		pendown-gpio = <&gpa 19 0>;
+	};
+
+	psram: ly68@2 {
+		reg = <2>;
+		compatible = "lyontek,ly68l6400";
+
+		spi-max-frequency = <100000000>;
+		op-sleep-ratio = <20>;
+	};
+
+	// ext_flash: m25p80@2 {
+	// 	reg = <2>;
+	// 	compatible = "spi-nand";
+
+	// 	spi-max-frequency = <33000000>;
+	// };
+
+	ext_lora: lora@3 {
+		reg = <3>;
+		compatible = "semtech,sx1301";
+
+		spi-max-frequency = <8000000>;
+	};
+};
+
+&uart1 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_uart1>;
+};
+
+&uart2 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_uart2>;
+};
+
+&audio {
+	status = "okay";
+};
+
+&i2c1 {
+	status = "okay";
+
+	clock-frequency = <100000>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_i2c1>;
+};
+
+
+&sfc {
+	status = "okay";
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_sfc>;
+
+	flash: m25p80@0 {
+		compatible = "xtx,xt25f16b-kgd", "jedec,spi-nor";
+		spi-max-frequency = <133000000>;
+		reg = <0>;
+
+		spi-rx-bus-width = <4>;
+		spi-tx-bus-width = <4>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			uboot@0 {
+				reg = <0x0 0x01a000>;
+			};
+
+			kernel@1a000 {
+				reg = <0x01a000 0x100000>;
+			};
+
+			rootfs@100000 {
+				reg = <0x11a000 0xe6000>;
+			};
+		};
+	};
+
+};
+
+&msc1 {
+	status = "okay";
+
+	bus-width = <4>;
+	max-frequency = <25000000>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pins_msc1>;
+
+	non-removable;
+};
+
+&otg_phy {
+	status = "okay";
+};
+
+&otg {
+	status = "okay";
+};
+
+&pinctrl {
+	pins_xpt2046: pa19 {
+		pins = "PA19";
+		bias-pull-up;
+	};
+
+	pins_sfc: sfc {
+		function = "sfc";
+		groups = "sfc-data", "sfc-clk", "sfc-ce";
+		bias-disable;
+	};
+
+	pins_spi0: spi0 {
+		function = "ssi";
+		groups = "ssi-dt-d", "ssi-dr-d", "ssi-clk-d", "ssi-ce0-d";
+	};
+
+	pins_uart2: uart2 {
+		function = "uart2";
+		groups = "uart2-data-a";
+	};
+
+	pins_uart1: uart1 {
+		function = "uart1";
+		groups = "uart1-data-a", "uart1-hwflow";
+	};
+
+	pins_i2c1: i2c1 {
+		function = "i2c1";
+		groups = "i2c1-data-a";
+		bias-pull-up;
+	};
+
+	pins_msc1: msc1 {
+		function = "mmc1";
+		groups = "mmc1-1bit", "mmc1-4bit";
+		bias-disable;
+	};
+
+};
