@@ -25,9 +25,11 @@ select:
           - ingenic,jz4760-cgu
           - ingenic,jz4760b-cgu
           - ingenic,jz4770-cgu
+          - ingenic,jz4775-cgu
           - ingenic,jz4780-cgu
           - ingenic,x1000-cgu
           - ingenic,x1830-cgu
+          - ingenic,x2000-cgu
   required:
     - compatible
 
@@ -54,9 +56,11 @@ properties:
           - ingenic,jz4760-cgu
           - ingenic,jz4760b-cgu
           - ingenic,jz4770-cgu
+          - ingenic,jz4775-cgu
           - ingenic,jz4780-cgu
           - ingenic,x1000-cgu
           - ingenic,x1830-cgu
+          - ingenic,x2000-cgu
       - const: simple-mfd
     minItems: 1
 
