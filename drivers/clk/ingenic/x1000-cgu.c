@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * X1000 SoC CGU driver
- * Copyright (c) 2019 周琰杰 (Zhou Yanjie) <zhouyanjie@wanyeetech.com>
+ * Copyright (C) 2019-2023 周琰杰 (Zhou Yanjie) <zhouyanjie@wanyeetech.com>
+ * Copyright (C) 2023 Reimu NotMoe <reimu@sudomaker.com>
  */
 
 #include <linux/clk-provider.h>
@@ -58,7 +59,135 @@
 #define USBPCR1_REFCLKDIV_24	(0x1 << USBPCR1_REFCLKDIV_SHIFT)
 #define USBPCR1_REFCLKDIV_12	(0x0 << USBPCR1_REFCLKDIV_SHIFT)
 
+/* bits within the I2SCDR register */
+#define I2SCDR_I2CS_SHIFT		30
+#define I2SCDR_I2CS_MASK		(0x1 << I2SCDR_I2CS_SHIFT)
+
 static struct ingenic_cgu *cgu;
+
+#define X1000_CGU_PLL_CACHE_SIZE	8
+
+struct x1000_cgu_pll_cache {
+	unsigned long rate;
+	unsigned long parent_rate;
+	unsigned int m;
+	unsigned int n;
+};
+
+static struct x1000_cgu_pll_cache pll_cache[X1000_CGU_PLL_CACHE_SIZE];
+static unsigned int pll_cache_usage = 0;
+
+static void x1000_cgu_pll_cache_fill(unsigned long rate, unsigned long parent_rate,
+		       unsigned int m, unsigned int n)
+{
+	int i = pll_cache_usage;
+
+	pll_cache[i].rate = rate;
+	pll_cache[i].parent_rate = parent_rate;
+	pll_cache[i].m = m;
+	pll_cache[i].n = n;
+
+	pll_cache_usage = (pll_cache_usage + 1) % X1000_CGU_PLL_CACHE_SIZE;
+}
+
+static struct x1000_cgu_pll_cache *x1000_cgu_pll_cache_find(unsigned long rate,
+			unsigned long parent_rate)
+{
+	for (int i=0; i<X1000_CGU_PLL_CACHE_SIZE; i++) {
+		if (pll_cache[i].rate == rate && pll_cache[i].parent_rate == parent_rate) {
+			// printk("pll_cache: found at %d\n", i);
+			return &pll_cache[i];
+		}
+	}
+
+	return NULL;
+}
+
+// This is a stupid way of calculating the PLL, but it doesn't have any edge cases.
+
+// Since the I2S of X1000 supports arbitrary sample rates and it would be a pity to
+// only support standard audio sample rates. For example, supporting a 3.579545 MHz
+// MCLK would be very useful if you want to run synth software with a R2R DAC.
+
+// With a simple 8-entries cache, it shouldn't be slow on average, and we can take full
+// advantage of it.
+static void x1000_i2s_calc_m_n(const struct ingenic_cgu_pll_info *pll_info,
+		       unsigned long rate, unsigned long parent_rate,
+		       unsigned int *pm, unsigned int *pn, unsigned int *pod)
+{
+	unsigned long curr_m, curr_n;
+	u64 freq_real, freq_diff, freq_diff_min = U64_MAX;
+	struct x1000_cgu_pll_cache *cached_value;
+
+	pr_info("x1000_i2s_pll: parent_rate: %lu, rate: %lu\n", parent_rate, rate);
+
+	if (parent_rate == 0 || rate == 0) {
+		curr_m = curr_n = 0;
+		goto out_nofill;
+	}
+
+	cached_value = x1000_cgu_pll_cache_find(rate, parent_rate);
+
+	if (cached_value) {
+		curr_m = cached_value->m;
+		curr_n = cached_value->n;
+		goto out_nofill;
+	}
+
+	if ((parent_rate % rate == 0) && ((parent_rate / rate) > 1)) {
+		curr_m = 1;
+		curr_n = parent_rate / rate;
+		goto out;
+	}
+
+	/*
+	 * The length of M is 9 bits, its value must be between 1 and 511.
+	 * The length of N is 13 bits, its value must be between 2 and 8191,
+	 * and must not be less than 2 times of the value of M.
+	 */
+	for (curr_m = 511; curr_m >= 1; curr_m--) {
+		for (curr_n = 8191; curr_n >= (curr_m * 2); curr_n--) {
+			freq_real = (u64)parent_rate * (u64)curr_m;
+			__div64_32(&freq_real, curr_n);
+
+			if (freq_real == rate) {
+				goto out;
+			} else {
+				freq_diff = freq_real > rate ? freq_real - rate : rate - freq_real;
+
+				if (freq_diff < freq_diff_min) {
+					freq_diff_min = freq_diff;
+				}
+			}
+		}
+	}
+
+	for (curr_m = 511; curr_m >= 1; curr_m--) {
+		for (curr_n = 8191; curr_n >= (curr_m * 2); curr_n--) {
+			freq_real = (u64)parent_rate * (u64)curr_m;
+			__div64_32(&freq_real, curr_n);
+
+			freq_diff = freq_real > rate ? freq_real - rate : rate - freq_real;
+
+			if (freq_diff == freq_diff_min) {
+				goto out;
+			}
+		}
+	}
+
+out:
+	x1000_cgu_pll_cache_fill(rate, parent_rate, curr_m, curr_n);
+
+out_nofill:
+	*pm = curr_m;
+	*pn = curr_n;
+
+	/*
+	 * The I2S PLL does not have OD bits, so set the *pod to 1 to ensure
+	 * that the ingenic_pll_calc() in cgu.c can run properly.
+	 */
+	*pod = 1;
+}
 
 static unsigned long x1000_otg_phy_recalc_rate(struct clk_hw *hw,
 						unsigned long parent_rate)
@@ -172,6 +301,54 @@ static const s8 pll_od_encoding[8] = {
 	0x0, 0x1, -1, 0x2, -1, -1, -1, 0x3,
 };
 
+static u8 x1000_i2s_get_parent(struct clk_hw *hw)
+{
+	u32 i2scdr;
+
+	i2scdr = readl(cgu->base + CGU_REG_I2SCDR);
+
+	return (i2scdr & I2SCDR_I2CS_MASK) >> I2SCDR_I2CS_SHIFT;
+}
+
+static int x1000_i2s_set_parent(struct clk_hw *hw, u8 idx)
+{
+	unsigned long flags;
+	u32 i2scdr;
+
+	if (idx > 1)
+		return -EINVAL;
+
+	spin_lock_irqsave(&cgu->lock, flags);
+
+	i2scdr = readl(cgu->base + CGU_REG_I2SCDR);
+	i2scdr &= ~I2SCDR_I2CS_MASK;
+	i2scdr |= idx << I2SCDR_I2CS_SHIFT;
+	writel(i2scdr, cgu->base + CGU_REG_I2SCDR);
+
+	spin_unlock_irqrestore(&cgu->lock, flags);
+
+	return 0;
+}
+
+static int x1000_i2s_enable(struct clk_hw *hw)
+{
+	u32 i2scdr;
+
+	i2scdr = readl(cgu->base + CGU_REG_I2SCDR);
+
+	if (i2scdr & I2SCDR_I2CS_MASK)
+		writel(readl(cgu->base + CGU_REG_I2SCDR1), cgu->base + CGU_REG_I2SCDR1);
+
+	return 0;
+}
+
+static const struct clk_ops x1000_i2s_ops = {
+	.get_parent = x1000_i2s_get_parent,
+	.set_parent = x1000_i2s_set_parent,
+
+	.enable = x1000_i2s_enable,
+};
+
 static const struct ingenic_cgu_clk_info x1000_cgu_clocks[] = {
 
 	/* External clocks */
@@ -224,6 +401,26 @@ static const struct ingenic_cgu_clk_info x1000_cgu_clocks[] = {
 			.bypass_bit = 6,
 			.enable_bit = 7,
 			.stable_bit = 0,
+		},
+	},
+
+	[X1000_CLK_I2SPLL] = {
+		"i2s_pll", CGU_CLK_PLL | CGU_CLK_MUX,
+		.parents = { X1000_CLK_SCLKA, X1000_CLK_MPLL },
+		.mux = { CGU_REG_I2SCDR, 31, 1 },
+		.pll = {
+			.reg = CGU_REG_I2SCDR,
+			.rate_multiplier = 1,
+			.m_shift = 13,
+			.m_bits = 9,
+			.m_offset = 0,
+			.n_shift = 0,
+			.n_bits = 13,
+			.n_offset = 0,
+			.bypass_bit = -1,
+			.enable_bit = 29,
+			.stable_bit = -1,
+			.calc_m_n_od = x1000_i2s_calc_m_n,
 		},
 	},
 
@@ -311,11 +508,16 @@ static const struct ingenic_cgu_clk_info x1000_cgu_clocks[] = {
 		.gate = { CGU_REG_CLKGR, 31 },
 	},
 
-	[X1000_CLK_MAC] = {
-		"mac", CGU_CLK_MUX | CGU_CLK_DIV | CGU_CLK_GATE,
+	[X1000_CLK_MACPHY] = {
+		"mac_phy", CGU_CLK_MUX | CGU_CLK_DIV,
 		.parents = { X1000_CLK_SCLKA, X1000_CLK_MPLL },
 		.mux = { CGU_REG_MACCDR, 31, 1 },
 		.div = { CGU_REG_MACCDR, 0, 1, 8, 29, 28, 27 },
+	},
+
+	[X1000_CLK_MAC] = {
+		"mac", CGU_CLK_GATE,
+		.parents = { X1000_CLK_AHB2 },
 		.gate = { CGU_REG_CLKGR, 25 },
 	},
 
@@ -375,6 +577,13 @@ static const struct ingenic_cgu_clk_info x1000_cgu_clocks[] = {
 		.mux = { CGU_REG_SSICDR, 30, 1 },
 	},
 
+	[X1000_CLK_CIM] = {
+		"cim", CGU_CLK_MUX | CGU_CLK_DIV,
+		.parents = { X1000_CLK_SCLKA, X1000_CLK_MPLL, -1, -1 },
+		.mux = { CGU_REG_CIMCDR, 31, 1 },
+		.div = { CGU_REG_CIMCDR, 0, 1, 8, 29, 28, 27 },
+	},
+
 	[X1000_CLK_EXCLK_DIV512] = {
 		"exclk_div512", CGU_CLK_FIXDIV,
 		.parents = { X1000_CLK_EXCLK },
@@ -386,6 +595,12 @@ static const struct ingenic_cgu_clk_info x1000_cgu_clocks[] = {
 		.parents = { X1000_CLK_EXCLK_DIV512, X1000_CLK_RTCLK },
 		.mux = { CGU_REG_OPCR, 2, 1},
 		.gate = { CGU_REG_CLKGR, 27 },
+	},
+
+	[X1000_CLK_I2S] = {
+		"i2s", CGU_CLK_CUSTOM,
+		.parents = { X1000_CLK_EXCLK, X1000_CLK_I2SPLL, -1, -1 },
+		.custom = { &x1000_i2s_ops },
 	},
 
 	/* Gate-only clocks */
@@ -426,6 +641,12 @@ static const struct ingenic_cgu_clk_info x1000_cgu_clocks[] = {
 		.gate = { CGU_REG_CLKGR, 9 },
 	},
 
+	[X1000_CLK_AIC] = {
+		"aic", CGU_CLK_GATE,
+		.parents = { X1000_CLK_EXCLK, -1, -1, -1 },
+		.gate = { CGU_REG_CLKGR, 11 },
+	},
+
 	[X1000_CLK_UART0] = {
 		"uart0", CGU_CLK_GATE,
 		.parents = { X1000_CLK_EXCLK, -1, -1, -1 },
@@ -442,6 +663,12 @@ static const struct ingenic_cgu_clk_info x1000_cgu_clocks[] = {
 		"uart2", CGU_CLK_GATE,
 		.parents = { X1000_CLK_EXCLK, -1, -1, -1 },
 		.gate = { CGU_REG_CLKGR, 16 },
+	},
+
+	[X1000_CLK_DMIC] = {
+		"dmic", CGU_CLK_GATE,
+		.parents = { X1000_CLK_PCLK, -1, -1, -1 },
+		.gate = { CGU_REG_CLKGR, 17 },
 	},
 
 	[X1000_CLK_TCU] = {
@@ -473,12 +700,18 @@ static void __init x1000_cgu_init(struct device_node *np)
 {
 	int retval;
 
+	memset(pll_cache, 0, sizeof(pll_cache));
+
 	cgu = ingenic_cgu_new(x1000_cgu_clocks,
 			      ARRAY_SIZE(x1000_cgu_clocks), np);
 	if (!cgu) {
 		pr_err("%s: failed to initialise CGU\n", __func__);
 		return;
 	}
+
+	// The POR value of I2SCDR does NOT comfort to datasheet
+	// specs and WILL confuse clk_get_parent() calls.
+	writel(0x0, cgu->base + CGU_REG_I2SCDR);
 
 	retval = ingenic_cgu_register_clocks(cgu);
 	if (retval) {
