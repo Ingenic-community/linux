@@ -149,6 +149,21 @@ config DMA_JZ4780
 	  If you have a board based on such a SoC and wish to use DMA for
 	  devices which can use the DMA controller, say Y or M here.
 
+	  DO NOT use this if you have a X series SoC, such as the X1000.
+
+config DMA_INGENIC
+	tristate "Ingenic X series DMA support"
+	depends on MIPS || COMPILE_TEST
+	select DMA_ENGINE
+	select DMA_VIRTUAL_CHANNELS
+	help
+	  Ported from Ingenic's 4.4.94 kernel. It's a mess, but usable.
+
+	  This selects support for the DMA controller in Ingenic X SoCs.
+	  If you have a board based on such a SoC and wish to use DMA for
+	  devices which can use the DMA controller, say Y or M here.
+
+
 config DMA_SA11X0
 	tristate "SA-11x0 DMA support"
 	depends on ARCH_SA1100 || COMPILE_TEST
