@@ -10,6 +10,16 @@ config TTY
 
 if TTY
 
+config TTY_DEFAULT_BUFFER_SIZE_LIMIT
+	int "Default buffer size limit in KiB"
+	range 1 2048
+	default 640
+	help
+	  Default buffer size limit for TTY flip buffers. Unit is KiB.
+
+	  The default Linux value is 640KiB. But it's probably overkill on many
+	  embedded devices where the RAM is precious...
+
 config VT
 	bool "Virtual terminal" if EXPERT
 	select INPUT
