@@ -42,7 +42,8 @@
  * @bypass_bit: the index of the bypass bit in the PLL control register, or
  *              -1 if there is no bypass bit
  * @enable_bit: the index of the enable bit in the PLL control register
- * @stable_bit: the index of the stable bit in the PLL control register
+ * @stable_bit: the index of the stable bit in the PLL control register, or
+ *              -1 if there is no stable bit
  */
 struct ingenic_cgu_pll_info {
 	unsigned reg;
@@ -54,7 +55,7 @@ struct ingenic_cgu_pll_info {
 	unsigned bypass_reg;
 	s8 bypass_bit;
 	u8 enable_bit;
-	u8 stable_bit;
+	s8 stable_bit;
 	void (*calc_m_n_od)(const struct ingenic_cgu_pll_info *pll_info,
 			    unsigned long rate, unsigned long parent_rate,
 			    unsigned int *m, unsigned int *n, unsigned int *od);
@@ -167,9 +168,8 @@ struct ingenic_cgu_clk_info {
 	int parents[4];
 
 	union {
-		struct ingenic_cgu_pll_info pll;
-
 		struct {
+			struct ingenic_cgu_pll_info pll;
 			struct ingenic_cgu_gate_info gate;
 			struct ingenic_cgu_mux_info mux;
 			struct ingenic_cgu_div_info div;

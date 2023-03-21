@@ -24,6 +24,9 @@
 
 #define MHZ (1000 * 1000)
 
+static u8 ingenic_clk_get_parent(struct clk_hw *hw);
+static int ingenic_clk_set_parent(struct clk_hw *hw, u8 idx);
+
 static inline const struct ingenic_cgu_clk_info *
 to_clk_info(struct ingenic_clk *clk)
 {
@@ -87,7 +90,7 @@ ingenic_pll_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 	bool bypass;
 	u32 ctl;
 
-	BUG_ON(clk_info->type != CGU_CLK_PLL);
+	BUG_ON(!(clk_info->type == CGU_CLK_PLL || clk_info->type == (CGU_CLK_PLL | CGU_CLK_MUX)));
 	pll_info = &clk_info->pll;
 
 	ctl = readl(cgu->base + pll_info->reg);
@@ -96,8 +99,20 @@ ingenic_pll_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 	m += pll_info->m_offset;
 	n = (ctl >> pll_info->n_shift) & GENMASK(pll_info->n_bits - 1, 0);
 	n += pll_info->n_offset;
-	od_enc = ctl >> pll_info->od_shift;
-	od_enc &= GENMASK(pll_info->od_bits - 1, 0);
+
+	if (pll_info->od_encoding) {
+		od_enc = ctl >> pll_info->od_shift;
+		od_enc &= GENMASK(pll_info->od_bits - 1, 0);
+
+		for (od = 0; od < pll_info->od_max; od++) {
+			if (pll_info->od_encoding[od] == od_enc)
+				break;
+		}
+		BUG_ON(od == pll_info->od_max);
+		od++;
+	} else {
+		od = 1;
+	}
 
 	if (pll_info->bypass_bit >= 0) {
 		ctl = readl(cgu->base + pll_info->bypass_reg);
@@ -108,15 +123,7 @@ ingenic_pll_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 			return parent_rate;
 	}
 
-	for (od = 0; od < pll_info->od_max; od++) {
-		if (pll_info->od_encoding[od] == od_enc)
-			break;
-	}
-	BUG_ON(od == pll_info->od_max);
-	od++;
-
-	return div_u64((u64)parent_rate * m * pll_info->rate_multiplier,
-		n * od);
+	return div_u64((u64)parent_rate * m * pll_info->rate_multiplier, n * od);
 }
 
 static void
@@ -215,13 +222,15 @@ ingenic_pll_set_rate(struct clk_hw *hw, unsigned long req_rate,
 	ctl &= ~(GENMASK(pll_info->n_bits - 1, 0) << pll_info->n_shift);
 	ctl |= (n - pll_info->n_offset) << pll_info->n_shift;
 
-	ctl &= ~(GENMASK(pll_info->od_bits - 1, 0) << pll_info->od_shift);
-	ctl |= pll_info->od_encoding[od - 1] << pll_info->od_shift;
+	if (pll_info->od_encoding) {
+		ctl &= ~(GENMASK(pll_info->od_bits - 1, 0) << pll_info->od_shift);
+		ctl |= pll_info->od_encoding[od - 1] << pll_info->od_shift;
+	}
 
 	writel(ctl, cgu->base + pll_info->reg);
 
 	/* If the PLL is enabled, verify that it's stable */
-	if (ctl & BIT(pll_info->enable_bit))
+	if ((pll_info->stable_bit >= 0) && (ctl & BIT(pll_info->enable_bit)))
 		ret = ingenic_pll_check_stable(cgu, pll_info);
 
 	spin_unlock_irqrestore(&cgu->lock, flags);
@@ -236,7 +245,7 @@ static int ingenic_pll_enable(struct clk_hw *hw)
 	const struct ingenic_cgu_clk_info *clk_info = to_clk_info(ingenic_clk);
 	const struct ingenic_cgu_pll_info *pll_info = &clk_info->pll;
 	unsigned long flags;
-	int ret;
+	int ret = 0;
 	u32 ctl;
 
 	spin_lock_irqsave(&cgu->lock, flags);
@@ -254,7 +263,9 @@ static int ingenic_pll_enable(struct clk_hw *hw)
 
 	writel(ctl, cgu->base + pll_info->reg);
 
-	ret = ingenic_pll_check_stable(cgu, pll_info);
+	if (pll_info->bypass_bit >= 0)
+		ret = ingenic_pll_check_stable(cgu, pll_info);
+
 	spin_unlock_irqrestore(&cgu->lock, flags);
 
 	return ret;
@@ -292,6 +303,9 @@ static int ingenic_pll_is_enabled(struct clk_hw *hw)
 }
 
 static const struct clk_ops ingenic_pll_ops = {
+	.get_parent = ingenic_clk_get_parent,
+	.set_parent = ingenic_clk_set_parent,
+
 	.recalc_rate = ingenic_pll_recalc_rate,
 	.round_rate = ingenic_pll_round_rate,
 	.set_rate = ingenic_pll_set_rate,
@@ -315,13 +329,18 @@ static u8 ingenic_clk_get_parent(struct clk_hw *hw)
 
 	if (clk_info->type & CGU_CLK_MUX) {
 		reg = readl(cgu->base + clk_info->mux.reg);
+
 		hw_idx = (reg >> clk_info->mux.shift) &
 			 GENMASK(clk_info->mux.bits - 1, 0);
-
 		/*
 		 * Convert the hardware index to the parent index by skipping
 		 * over any -1's in the parents array.
 		 */
+
+		// num:    0, 1, 2, 3, 4, 5, 6
+		// idx:    A, B, C, D
+		// hw_idx: A, B, -, C, -, -, D
+
 		for (i = 0; i < hw_idx; i++) {
 			if (clk_info->parents[i] != -1)
 				idx++;
@@ -681,10 +700,12 @@ static int ingenic_register_clock(struct ingenic_cgu *cgu, unsigned idx)
 			num_possible = ARRAY_SIZE(clk_info->parents);
 
 		for (i = 0; i < num_possible; i++) {
+
 			if (clk_info->parents[i] == -1)
 				continue;
 
 			parent = cgu->clocks.clks[clk_info->parents[i]];
+
 			parent_names[clk_init.num_parents] =
 				__clk_get_name(parent);
 			clk_init.num_parents++;
@@ -714,7 +735,7 @@ static int ingenic_register_clock(struct ingenic_cgu *cgu, unsigned idx)
 
 		caps &= ~CGU_CLK_PLL;
 
-		if (caps) {
+		if (caps && caps != CGU_CLK_MUX) {
 			pr_err("%s: PLL may not be combined with type 0x%x\n",
 			       __func__, caps);
 			goto out;
