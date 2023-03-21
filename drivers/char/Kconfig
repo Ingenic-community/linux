@@ -411,6 +411,8 @@ source "drivers/s390/char/Kconfig"
 
 source "drivers/char/xillybus/Kconfig"
 
+source "drivers/char/x1501_audio/Kconfig"
+
 config ADI
 	tristate "SPARC Privileged ADI driver"
 	depends on SPARC64

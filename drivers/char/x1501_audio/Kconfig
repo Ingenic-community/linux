@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+
+config X1501_LW_AUDIO
+	tristate "Ingenic X1501 Lightweight Audio Interface"
+	depends on MIPS || COMPILE_TEST
+	depends on OF
+	depends on COMMON_CLK
+	help
+	  Lightweight audio controller driver for the Ingenic X1501.
+
+	  This driver implements the Open Sound System (OSS) API, but
+	  does not require any special kernel components. It will work
+	  in all subsequent versions of the Linux kernel unless Linus
+	  decided to kill the character device APIs.
+
+	  Since the X1501 only has an internal codec, it doesn't make
+	  any sense to use the complex ALSA SoC audio APIs. By using
+	  this driver, we can save as much as 300KiB of system RAM.
+
+	  Although this is designed for the X1501, you can use it on
+	  other 1st gen X series SoCs, such as the X1000.
+
+	  RAM isn't cheap!
+
+	  If unsure, say N.
+
+choice
+	depends on X1501_LW_AUDIO
+	prompt "Choose implementation"
+	default X1501_LW_AUDIO_YUKINO
+	help
+	  Since the two authors of this driver both can't agree with the design
+	  principles of each other's implementation, this option allows the user
+	  to choose between them.
+
+config X1501_LW_AUDIO_YUKINO
+	bool "Yukino's implementation"
+	help
+	  The implementation uses a linked list to manage the audio periods.
+
+config X1501_LW_AUDIO_REIMU
+	bool "Reimu's implementation"
+	help
+	  The implementation uses an index and per-period length information
+	  to manage the audio periods.
+
+endchoice
