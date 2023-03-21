@@ -164,7 +164,12 @@ static int mips_cpu_intc_map(struct irq_domain *d, unsigned int irq,
 	if (cpu_has_vint)
 		set_vi_handler(hw, plat_irq_dispatch);
 
-	irq_set_chip_and_handler(irq, chip, handle_percpu_irq);
+	if (current_cpu_type() == CPU_XBURST2) {
+		irq_set_percpu_devid(irq);
+		irq_set_chip_and_handler(irq, chip, handle_percpu_devid_irq);
+	} else {
+		irq_set_chip_and_handler(irq, chip, handle_percpu_irq);
+	}
 
 	return 0;
 }
