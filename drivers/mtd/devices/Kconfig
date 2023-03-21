@@ -95,6 +95,12 @@ config MTD_MCHP48L640
 	help
 	  This enables access to Microchip 48L640 EERAM chips, using SPI.
 
+config MTD_LYONTEK_LY68
+	tristate "Lyontek LY68 series PSRAM"
+	depends on SPI_MASTER
+	help
+	  This enables access to Lyontek LY68 series PSRAM chips, using SPI.
+
 config MTD_SPEAR_SMI
 	tristate "SPEAR MTD NOR Support through SMI controller"
 	depends on PLAT_SPEAR || COMPILE_TEST
