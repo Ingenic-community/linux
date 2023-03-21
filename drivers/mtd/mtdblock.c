@@ -20,6 +20,11 @@
 #include <linux/mutex.h>
 #include <linux/major.h>
 
+#ifdef MTD_BLOCK_USE_4K_BLKSIZE
+#define MTDBLOCK_IOSIZE		4096
+#else
+#define MTDBLOCK_IOSIZE		512
+#endif
 
 struct mtdblk_dev {
 	struct mtd_blktrans_dev mbd;
@@ -227,7 +232,7 @@ static int mtdblock_readsect(struct mtd_blktrans_dev *dev,
 			      unsigned long block, char *buf)
 {
 	struct mtdblk_dev *mtdblk = container_of(dev, struct mtdblk_dev, mbd);
-	return do_cached_read(mtdblk, block<<9, 512, buf);
+	return do_cached_read(mtdblk, block * MTDBLOCK_IOSIZE, MTDBLOCK_IOSIZE, buf);
 }
 
 static int mtdblock_writesect(struct mtd_blktrans_dev *dev,
@@ -243,7 +248,7 @@ static int mtdblock_writesect(struct mtd_blktrans_dev *dev,
 		 * return -EAGAIN sometimes, but why bother?
 		 */
 	}
-	return do_cached_write(mtdblk, block<<9, 512, buf);
+	return do_cached_write(mtdblk, block * MTDBLOCK_IOSIZE, MTDBLOCK_IOSIZE, buf);
 }
 
 static int mtdblock_open(struct mtd_blktrans_dev *mbd)
@@ -320,7 +325,7 @@ static void mtdblock_add_mtd(struct mtd_blktrans_ops *tr, struct mtd_info *mtd)
 	dev->mbd.mtd = mtd;
 	dev->mbd.devnum = mtd->index;
 
-	dev->mbd.size = mtd->size >> 9;
+	dev->mbd.size = mtd->size / MTDBLOCK_IOSIZE;
 	dev->mbd.tr = tr;
 
 	if (!(mtd->flags & MTD_WRITEABLE))
@@ -339,7 +344,7 @@ static struct mtd_blktrans_ops mtdblock_tr = {
 	.name		= "mtdblock",
 	.major		= MTD_BLOCK_MAJOR,
 	.part_bits	= 0,
-	.blksize 	= 512,
+	.blksize 	= MTDBLOCK_IOSIZE,
 	.open		= mtdblock_open,
 	.flush		= mtdblock_flush,
 	.release	= mtdblock_release,
