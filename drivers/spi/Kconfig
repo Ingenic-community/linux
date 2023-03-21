@@ -443,6 +443,17 @@ config SPI_INGENIC
 	  To compile this driver as a module, choose M here: the module
 	  will be called spi-ingenic.
 
+config SPI_INGENIC_NOUVEAU
+	tristate "Ingenic X series SoCs SPI controller"
+	depends on MACH_INGENIC || COMPILE_TEST
+	help
+	  SPI controller driver for the Ingenic X series SoCs. It solved
+	  many problems of the old driver. It probably won't work on the
+	  old JZ series SoCs.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called spi-ingenic-nouveau.
+
 config SPI_INTEL
 	tristate
 
