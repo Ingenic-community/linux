@@ -454,6 +454,15 @@ config SPI_INGENIC_NOUVEAU
 	  To compile this driver as a module, choose M here: the module
 	  will be called spi-ingenic-nouveau.
 
+config SPI_INGENIC_SFC
+	tristate "Ingenic SPI Flash Controller"
+	depends on MACH_INGENIC || COMPILE_TEST
+	help
+	  This enables support for the Ingenic SPI flash controller.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called spi-ingenic-sfc.
+
 config SPI_INTEL
 	tristate
 
