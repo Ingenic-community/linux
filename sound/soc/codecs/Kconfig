@@ -113,6 +113,7 @@ config SND_SOC_ALL_CODECS
 	imply SND_SOC_JZ4725B_CODEC
 	imply SND_SOC_JZ4760_CODEC
 	imply SND_SOC_JZ4770_CODEC
+	imply SND_SOC_X1000_CODEC
 	imply SND_SOC_LM4857
 	imply SND_SOC_LM49453
 	imply SND_SOC_LOCHNAGAR_SC
@@ -878,6 +879,18 @@ config SND_SOC_JZ4770_CODEC
 
 	  This driver can also be built as a module. If so, the module
 	  will be called snd-soc-jz4770-codec.
+
+config SND_SOC_X1000_CODEC
+	depends on MACH_INGENIC || COMPILE_TEST
+	depends on OF
+	select REGMAP
+	tristate "Ingenic X1000 internal CODEC"
+	help
+	  Enable support for the internal CODEC found in the X1000 SoC
+	  from Ingenic.
+
+	  This driver can also be built as a module. If so, the module
+	  will be called snd-soc-x1000-codec.
 
 config SND_SOC_L3
 	tristate
