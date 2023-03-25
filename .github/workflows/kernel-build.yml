@@ -1,0 +1,57 @@
+name: Kernel build tests
+
+on:
+  pull_request:
+    paths-ignore:
+      - '.github/**'
+    branches: [ "v*" ]
+  push:
+    paths-ignore:
+      - '.github/**'
+    branches: [ "v*" ]
+  workflow_dispatch:
+
+env:
+  NUM_JOBS: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: ci20
+            arch: mipsel
+            defconfig: ci20_defconfig
+
+    steps:
+    - name: Update install
+      run:
+        sudo apt update
+
+    - name: Install toolchain
+      run: sudo apt install -y build-essential gcc-mipsel-linux-gnu u-boot-tools
+      timeout-minutes: 5
+
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 1
+        clean: true
+
+    - name: Build kernel for ${{matrix.name}}
+      run: |
+        mkdir ${{github.workspace}}/build
+        export ARCH=mips
+        export CROSS_COMPILE=mipsel-linux-gnu-
+        export IMAGE=uImage
+        make O=${{github.workspace}}/build ${{matrix.defconfig}}
+        make O=${{github.workspace}}/build -j ${{env.NUM_JOBS}} $IMAGE
+        mkdir -p ${{github.workspace}}/install/boot/overlays
+        cp ${{github.workspace}}/build/arch/${ARCH}/boot/$IMAGE ${{github.workspace}}/install/boot/${{matrix.name}}-$IMAGE.img
+
+    - name: Upload results
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{matrix.name}}_build
+        path: ${{github.workspace}}/install/boot/${{matrix.name}}-$IMAGE.img
+        retention-days: 90
