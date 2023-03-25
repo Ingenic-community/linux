@@ -2,6 +2,10 @@
 /*
  * Copyright (C) 2010 Lars-Peter Clausen <lars@metafoo.de>
  * Copyright (C) 2015 Imagination Technologies
+ * Copyright (C) 2016 Ingenic Semiconductor Co.,Ltd
+ *   Author: bliu
+ * Copyright (C) 2023 SudoMaker, Ltd.
+ *   Author: Reimu NotMoe <reimu@sudomaker.com>
  *
  * Ingenic SoC UART support
  */
@@ -20,6 +24,11 @@
 #include <linux/serial_reg.h>
 
 #include "8250.h"
+
+#define REG_UDLLR		0x00
+#define REG_UDLHR		0x04
+#define REG_UMR			0x24
+#define REG_UACR		0x28
 
 /** ingenic_uart_config: SOC specific config data. */
 struct ingenic_uart_config {
@@ -204,6 +213,120 @@ static unsigned int ingenic_uart_serial_in(struct uart_port *p, int offset)
 	return value;
 }
 
+static void calc_div(unsigned long exclk_freq, unsigned long baud_rate,
+	      unsigned *out_div, unsigned *out_umr, unsigned *out_uacr)
+{
+	unsigned long umr_best = 0, div_best = 0, uacr_best = 0, uacr_count_best = 0;
+	unsigned long umr = 0, div = 1, sum = 0;
+	unsigned long uacr, uacr_count;
+	unsigned long tmp0[12], tmp1[12];
+	unsigned baud_mul16 = 16 * baud_rate;
+	u64 t0, t1, t2, t3;
+	s64 err;
+
+	memset(tmp0, 0, sizeof(tmp0));
+	memset(tmp1, 0, sizeof(tmp1));
+
+	if ((exclk_freq % baud_mul16) == 0) {
+		div_best = exclk_freq / baud_mul16;
+		umr_best = 16;
+		uacr_best = 0;
+	} else {
+		while (1) {
+			umr = exclk_freq / (baud_rate * div);
+			if (umr > 32) {
+				div++;
+				continue;
+			}
+			if (umr < 4) {
+				break;
+			}
+			for (unsigned i=0; i<12; i++) {
+				tmp0[i] = umr;
+				tmp1[i] = 0;
+				sum = 0;
+				for (unsigned j=0; j<(i+1); j++) {
+					sum += tmp0[j];
+				}
+
+				t0 = 0x1000000000;
+				t1 = (i + 1) * t0;
+				t2 = (sum * div) * t0;
+				t3 = div * t0;
+				do_div(t1, baud_rate);
+				do_div(t2, exclk_freq);
+				do_div(t3, (2 * exclk_freq));
+
+				err = t1 - t2 - t3;
+				if (err > 0) {
+					tmp0[i] += 1;
+					tmp1[i] = 1;
+				}
+			}
+
+			uacr = 0;
+			uacr_count = 0;
+
+			for (unsigned i=0; i<12; i++) {
+				if (tmp1[i] == 1) {
+					uacr |= 1 << i;
+					uacr_count += 1;
+				}
+			}
+
+			if (div_best == 0) {
+				div_best = div;
+				umr_best = umr;
+				uacr_best = uacr;
+				uacr_count_best = uacr_count;
+			};
+
+			// the best value of umr should be near 16,
+			// and the value of uacr should better be smaller
+
+			if (((umr - 16) < (umr_best - 16)) ||
+			    ((umr - 16) == (umr_best - 16) && uacr_best > uacr)) {
+				div_best = div;
+				umr_best = umr;
+				uacr_best = uacr;
+				uacr_count_best = uacr_count;
+			}
+
+			div++;
+		}
+	}
+
+	if (uacr_count_best != 0) {
+		uacr_best = 0;
+		for (unsigned i=uacr_count_best; i<11; i+=(11/uacr_count_best)) {
+			uacr_best |= 1 << i;
+		}
+	};
+
+	*out_div = div_best;
+	*out_umr = umr_best;
+	*out_uacr = uacr_best;
+}
+
+static void ingenic_uart_do_set_divisor(struct uart_port *port, unsigned int baud,
+			       unsigned int quot, unsigned int quot_frac)
+{
+	unsigned div, umr, uacr;
+	unsigned tmp;
+
+	calc_div(port->uartclk, baud, &div, &umr, &uacr);
+
+	tmp = ingenic_uart_serial_in(port, UART_LCR);
+	tmp |= UART_LCR_DLAB;
+	ingenic_uart_serial_out(port, UART_LCR, tmp);
+
+	writeb((div >> 8) & 0xff, port->membase + REG_UDLHR);
+	writeb(div & 0xff, port->membase + REG_UDLLR);
+
+	writel(umr, port->membase + REG_UMR);
+	writel(uacr, port->membase + REG_UACR);
+}
+
 static int ingenic_uart_probe(struct platform_device *pdev)
 {
 	struct uart_8250_port uart = {};
@@ -238,6 +361,7 @@ static int ingenic_uart_probe(struct platform_device *pdev)
 	uart.port.iotype = UPIO_MEM;
 	uart.port.mapbase = regs->start;
 	uart.port.regshift = 2;
+	uart.port.set_divisor = ingenic_uart_do_set_divisor;
 	uart.port.serial_out = ingenic_uart_serial_out;
 	uart.port.serial_in = ingenic_uart_serial_in;
 	uart.port.irq = irq;
@@ -349,5 +473,6 @@ static struct platform_driver ingenic_uart_platform_driver = {
 module_platform_driver(ingenic_uart_platform_driver);
 
 MODULE_AUTHOR("Paul Burton");
+MODULE_AUTHOR("Reimu NotMoe <reimu@sudomaker.com>");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Ingenic SoC UART driver");
