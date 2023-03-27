@@ -1,5 +1,7 @@
 # Linux for Ingenic SoCs
 
+[![Kernel Build](https://github.com/Ingenic-community/linux/actions/workflows/kernel-build.yml/badge.svg)](https://github.com/Ingenic-community/linux/actions/workflows/kernel-build.yml)
+
 Linux kernel source tree with the latest features and modifications to unleash the full potential of Ingenic processors.
 
 ## Purpose
