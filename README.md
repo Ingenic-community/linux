@@ -27,4 +27,4 @@ License information are clearly stated in each file. Please respect them.
 
 ### No support for T series?
 
-Unlike the good old JZ and X series, the T series is in tight control of a subsidiary company of Ingenic in a distant city. And unfortunately they have a very different philosophy of treating customers. You can urge them to release the related datasheets to public by sending emails to marketing@ingenic.com and marketing@lumissil.com.
+Unlike the good old JZ and X series, the T series is in tight control of a subsidiary company of Ingenic in a distant city. And unfortunately they have a very different philosophy of treating customers. You can urge them to release the related datasheets to public by sending emails to support_hf@ingenic.com and marketing@lumissil.com.
