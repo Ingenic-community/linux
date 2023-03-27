@@ -4,10 +4,12 @@ on:
   pull_request:
     paths-ignore:
       - '.github/**'
+      - 'README.md'
     branches: [ "v*" ]
   push:
     paths-ignore:
       - '.github/**'
+      - 'README.md'
     branches: [ "v*" ]
   workflow_dispatch:
 
@@ -23,6 +25,7 @@ jobs:
           - name: ci20
             arch: mipsel
             defconfig: ci20_defconfig
+            image_name: uImage
 
     steps:
     - name: Update install
@@ -43,7 +46,7 @@ jobs:
         mkdir ${{github.workspace}}/build
         export ARCH=mips
         export CROSS_COMPILE=mipsel-linux-gnu-
-        export IMAGE=uImage
+        export IMAGE=${{matrix.image_name}}
         make O=${{github.workspace}}/build ${{matrix.defconfig}}
         make O=${{github.workspace}}/build -j ${{env.NUM_JOBS}} $IMAGE
         mkdir -p ${{github.workspace}}/install/boot/overlays
@@ -53,5 +56,5 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: ${{matrix.name}}_build
-        path: ${{github.workspace}}/install/boot/${{matrix.name}}-$IMAGE.img
+        path: ${{github.workspace}}/install/boot/${{matrix.name}}-${{matrix.image_name}}.img
         retention-days: 90
