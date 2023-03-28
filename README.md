@@ -18,23 +18,25 @@ This repo is primarily for Ingenic SoCs, but it's not limited to these. We may i
 
 ## Status Matrix
 | **Chip**                    | JZ series   | X1000 series      | X1600 series       | X2000 series |
-|-----------------------------|-------------|-------------------|--------------------|--------------|
-| **Booting**                 | ✅           | ✅                 | ❓                  | ✅            |
-| **Suspend**                 | ✅           | ✅                 | ❓                  | ❌            |
-| **SMP**                     | ✅           | N/A               | N/A                | ✅            |
-| **DMA**                     | DMAC✅       | PDMA✅             | ❓                  | PDMA✅        |
-| **USB**                     | UHC✅ USBD✅  | OTG✅              | ❓                  | ⏳            |
-| **Ethernet**                | N/A         | MAC✅              | ❓                  | ❓            |
-| **SPI**                     | SSI✅        | SSI✅ SFC✅         | SSI❓ SFC❓ SSI_SLV❌ | SSI✅ SFC✅    |
-| **I2C**                     | I2C✅        | SMB✅              | ❓                  | ❓            |
-| **PWM**                     | TCU✅        | TCU✅              | ❓                  | TCU✅ PWM❌    |
-| **ADC**                     | ❌           | N/A               | ❌                  | ❌            |
-| **SD/MMC**                  | MSC✅        | MSC✅              | ❓                  | SDHCI✅       |
-| **Audio**                   | AIC✅ Codec✅ | AIC✅ Codec✅ DMIC❌ | ❌                  | ❌            |
-| **Display**                 | LCDC✅       | SLCD✅             | ❌                  | ❌            |
-| **Camera**                  | CIM❌        | CIM❌              | ❌                  | ❌            |
-| **Heterogeneous multicore** | VPU✅        | MCU✅              |                    |              |
-| **Accelerator**             | ❌           | ❌                 | ❌                  | ❌            |
+|:----------------------------|:------------|:------------------|:-------------------|:-------------|
+| **Booting**                 | ✅           | ✅                 | ❓            | ✅            |
+| **Suspend**                 | ✅           | ✅                 | ❓            | ❌            |
+| **SMP**                     | ✅           | N/A               | N/A          | ✅            |
+| **DMA**                     | DMAC✅       | PDMA✅             | ❓            | PDMA✅        |
+| **USB**                     | UHC✅ USBD✅  | OTG✅              | ❓            | ⏳            |
+| **Ethernet**                | N/A         | MAC✅              | ❓            | ❓            |
+| **SPI Master**              | SSI✅        | SSI✅              | ❓            | SSI✅         |
+| **SPI Slave**               | N/A         | N/A               | ❌            | N/A          |
+| **Quad SPI**                | N/A         | SFC✅              | ❓            | SFC✅         |
+| **I2C**                     | I2C✅        | SMB✅              | ❓            | ❓            |
+| **PWM**                     | TCU✅        | TCU✅              | ❓            | TCU✅ PWM❌    |
+| **ADC**                     | ❌           | N/A               | ❌            | ❌            |
+| **SD/MMC**                  | MSC✅        | MSC✅              | ❓            | SDHCI✅       |
+| **Audio**                   | AIC✅ Codec✅ | AIC✅ Codec✅ DMIC❌ | ❌            | ❌            |
+| **Display**                 | LCDC✅       | SLCD✅             | ❌            | ❌            |
+| **Camera**                  | CIM❌        | CIM❌              | ❌            | ❌            |
+| **Heterogeneous multicore** | VPU✅        | MCU✅              |              |              |
+| **Accelerator**             | ❌           | ❌                 | ❌            | ❌            |
 
 ## Notes
 Need help? Have a question? Feel free to open an issue.
