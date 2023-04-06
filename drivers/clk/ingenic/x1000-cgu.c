@@ -9,6 +9,7 @@
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/of.h>
+#include <linux/clk.h>
 
 #include <dt-bindings/clock/ingenic,x1000-cgu.h>
 
@@ -103,6 +104,8 @@ static struct x1000_cgu_pll_cache *x1000_cgu_pll_cache_find(unsigned long rate,
 	return NULL;
 }
 
+// TODO: NEED REVISIT
+
 // This is a stupid way of calculating the PLL, but it doesn't have any edge cases.
 
 // Since the I2S of X1000 supports arbitrary sample rates and it would be a pity to
@@ -119,7 +122,7 @@ static void x1000_i2s_calc_m_n(const struct ingenic_cgu_pll_info *pll_info,
 	u64 freq_real, freq_diff, freq_diff_min = U64_MAX;
 	struct x1000_cgu_pll_cache *cached_value;
 
-	pr_info("x1000_i2s_pll: parent_rate: %lu, rate: %lu\n", parent_rate, rate);
+	// pr_info("x1000_i2s_pll: parent_rate: %lu, rate: %lu\n", parent_rate, rate);
 
 	if (parent_rate == 0 || rate == 0) {
 		curr_m = curr_n = 0;
@@ -187,6 +190,8 @@ out_nofill:
 	 * that the ingenic_pll_calc() in cgu.c can run properly.
 	 */
 	*pod = 1;
+
+	// pr_info("x1000_i2s_pll: M: %lu, N: %lu\n", curr_m, curr_n);
 }
 
 static unsigned long x1000_otg_phy_recalc_rate(struct clk_hw *hw,
@@ -330,6 +335,28 @@ static int x1000_i2s_set_parent(struct clk_hw *hw, u8 idx)
 	return 0;
 }
 
+static int x1000_i2s_determine_rate(struct clk_hw *hw,
+					  struct clk_rate_request *req) {
+
+	u32 i2scdr;
+	int rc;
+
+	// For X1000 it's only possible to use a 24MHz crystal
+	// So we're hardcoding the frequency here
+	req->best_parent_hw = clk_hw_get_parent_by_index(hw, (req->rate == 24000000) ? 0 : 1);
+
+	rc = clk_set_rate(req->best_parent_hw->clk, req->rate);
+	if (rc)
+		return rc;
+
+	i2scdr = readl(cgu->base + CGU_REG_I2SCDR);
+
+	if (i2scdr & I2SCDR_I2CS_MASK)
+		writel(readl(cgu->base + CGU_REG_I2SCDR1), cgu->base + CGU_REG_I2SCDR1);
+
+	return 0;
+}
+
 static int x1000_i2s_enable(struct clk_hw *hw)
 {
 	u32 i2scdr;
@@ -345,6 +372,8 @@ static int x1000_i2s_enable(struct clk_hw *hw)
 static const struct clk_ops x1000_i2s_ops = {
 	.get_parent = x1000_i2s_get_parent,
 	.set_parent = x1000_i2s_set_parent,
+
+	.determine_rate = x1000_i2s_determine_rate,
 
 	.enable = x1000_i2s_enable,
 };
