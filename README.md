@@ -36,7 +36,7 @@ This repo is primarily for Ingenic SoCs, but it's not limited to these. We may i
 | **Analog Codec**            | ✅          | ✅            | N/A          | ❌            |
 | **PDMIC**                   | ❌          | ❌            | N/A          | ❌            |
 | **Display**                 | LCDC✅      | SLCD✅        | ❌            | ❌            |
-| **Camera**                  | CIM❌       | CIM❌         | ❌            | ❌            |
+| **Camera**                  | CIM❓       | CIM✅         | ❌            | ❌            |
 | **CAN**                     | N/A        | N/A          | ❌            | N/A          |
 | **Parallel i80 bus**        | EMC✅       | ❓            | ❓            | ❓            |
 | **CDBUS**                   | N/A        | N/A          | ❌            | N/A          |
