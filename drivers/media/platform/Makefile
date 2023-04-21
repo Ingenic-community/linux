@@ -12,6 +12,7 @@ obj-y += aspeed/
 obj-y += atmel/
 obj-y += cadence/
 obj-y += chips-media/
+obj-y += ingenic/
 obj-y += intel/
 obj-y += marvell/
 obj-y += mediatek/

@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+comment "Ingenic media platform drivers"
+
+source "drivers/media/platform/ingenic/cim-x1000/Kconfig"
+source "drivers/media/platform/ingenic/jpeg-x1000/Kconfig"

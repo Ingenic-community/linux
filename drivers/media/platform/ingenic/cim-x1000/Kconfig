@@ -1,0 +1,18 @@
+config VIDEO_INGENIC_CIM_X1000
+	tristate "Ingenic X1000 series Camera Interface Module (CIM) driver"
+	depends on VIDEO_DEV && (MACH_INGENIC || COMPILE_TEST)
+	select VIDEO_V4L2_SUBDEV_API
+	select VIDEOBUF2_DMA_CONTIG
+	select MEDIA_CONTROLLER
+	select V4L2_FWNODE
+	help
+		CIM Driver for X1000
+
+config VIDEO_INGENIC_CIM_X1000_DEBUG
+	tristate "Enable debugging output"
+	depends on VIDEO_INGENIC_CIM_X1000
+	help
+		This enables dumping registers on various operations.
+		FPS is also measured on every 60 frames.
+		Your syslog will be spammed.
+

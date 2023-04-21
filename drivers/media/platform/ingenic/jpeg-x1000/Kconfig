@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config VIDEO_INGENIC_JPEG_X1000
+	tristate "Ingenic X1000 series JPEG codec driver"
+	depends on VIDEO_DEV && (MACH_INGENIC || COMPILE_TEST)
+	select V4L2_MEM2MEM_DEV
+	select VIDEOBUF2_DMA_CONTIG
+
