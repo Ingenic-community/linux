@@ -607,10 +607,11 @@ static const struct ingenic_cgu_clk_info x1000_cgu_clocks[] = {
 	},
 
 	[X1000_CLK_CIM] = {
-		"cim", CGU_CLK_MUX | CGU_CLK_DIV,
+		"cim", CGU_CLK_MUX | CGU_CLK_DIV | CGU_CLK_GATE,
 		.parents = { X1000_CLK_SCLKA, X1000_CLK_MPLL, -1, -1 },
 		.mux = { CGU_REG_CIMCDR, 31, 1 },
 		.div = { CGU_REG_CIMCDR, 0, 1, 8, 29, 28, 27 },
+		.gate = { CGU_REG_CLKGR, 22 },
 	},
 
 	[X1000_CLK_EXCLK_DIV512] = {
