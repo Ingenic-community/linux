@@ -20,7 +20,7 @@
 #include <linux/mutex.h>
 #include <linux/major.h>
 
-#ifdef MTD_BLOCK_USE_4K_BLKSIZE
+#ifdef CONFIG_MTD_BLOCK_USE_4K_BLKSIZE
 #define MTDBLOCK_IOSIZE		4096
 #else
 #define MTDBLOCK_IOSIZE		512
