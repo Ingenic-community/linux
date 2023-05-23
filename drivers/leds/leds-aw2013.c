@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
-// Driver for Awinic AW2013 3-channel LED driver
+// Driver for Awinic AW2013 & AW2023 3-channel LED driver
 
 #include <linux/i2c.h>
 #include <linux/leds.h>
@@ -15,10 +15,15 @@
 #define AW2013_RSTR 0x00
 #define AW2013_RSTR_RESET 0x55
 #define AW2013_RSTR_CHIP_ID 0x33
+#define AW2023_RSTR_CHIP_ID 0x09
 
 /* Global control register */
 #define AW2013_GCR 0x01
 #define AW2013_GCR_ENABLE BIT(0)
+
+/* Global control register 2 */
+#define AW2023_GCR2 0x02
+#define AW2023_GCR2_IMAX_MASK (BIT(0) | BIT(1))
 
 /* LED channel enable register */
 #define AW2013_LCTR 0x30
@@ -26,7 +31,8 @@
 
 /* LED channel control registers */
 #define AW2013_LCFG(x) (0x31 + (x))
-#define AW2013_LCFG_IMAX_MASK (BIT(0) | BIT(1)) // Should be 0-3
+#define AW2013_LCFG_IMAX_MASK (GENMASK(1, 0)) // Should be 0-3
+#define AW2023_LCFG_IMAX_MASK (GENMASK(3, 0)) // Should be 0-15
 #define AW2013_LCFG_MD BIT(4)
 #define AW2013_LCFG_FI BIT(5)
 #define AW2013_LCFG_FO BIT(6)
@@ -51,6 +57,11 @@
 
 #define AW2013_TIME_STEP 130 /* ms */
 
+struct aw20xx_chip {
+	uint8_t chip_id;
+	uint8_t current_mode;
+};
+
 struct aw2013;
 
 struct aw2013_led {
@@ -64,6 +75,7 @@ struct aw2013 {
 	struct mutex mutex; /* held when writing to registers */
 	struct regulator *vcc_regulator;
 	struct i2c_client *client;
+	const struct aw20xx_chip *chip;
 	struct aw2013_led leds[AW2013_MAX_LEDS];
 	struct regmap *regmap;
 	int num_leds;
@@ -73,6 +85,7 @@ struct aw2013 {
 static int aw2013_chip_init(struct aw2013 *chip)
 {
 	int i, ret;
+	unsigned imax_mask;
 
 	ret = regmap_write(chip->regmap, AW2013_GCR, AW2013_GCR_ENABLE);
 	if (ret) {
@@ -81,10 +94,15 @@ static int aw2013_chip_init(struct aw2013 *chip)
 		return ret;
 	}
 
+	if (chip->chip->current_mode)
+		imax_mask = AW2023_LCFG_IMAX_MASK;
+	else
+		imax_mask = AW2013_LCFG_IMAX_MASK;
+
 	for (i = 0; i < chip->num_leds; i++) {
 		ret = regmap_update_bits(chip->regmap,
 					 AW2013_LCFG(chip->leds[i].num),
-					 AW2013_LCFG_IMAX_MASK,
+					 imax_mask,
 					 chip->leds[i].imax);
 		if (ret) {
 			dev_err(&chip->client->dev,
@@ -264,6 +282,56 @@ static int aw2013_probe_dt(struct aw2013 *chip)
 	struct device_node *np = dev_of_node(&chip->client->dev), *child;
 	int count, ret = 0, i = 0;
 	struct aw2013_led *led;
+	unsigned current_step_ua = 5000, current_step_max = 3;
+
+	if (chip->chip->current_mode) {
+		// AW2023
+		// Io = Imax*CUR/15 (mA)
+		unsigned global_max_ma;
+		uint8_t global_max_ma_reg;
+		if (!of_property_read_u32(child, "global-max-microamp", &global_max_ma)) {
+			switch (global_max_ma) {
+			case 30:
+				global_max_ma_reg = 0b01;
+				break;
+			case 15:
+				global_max_ma_reg = 0b00;
+				break;
+			case 10:
+				global_max_ma_reg = 0b11;
+				break;
+			case 5:
+				global_max_ma_reg = 0b10;
+				break;
+			default:
+				dev_err(&chip->client->dev,
+				"global-max-microamp must be 5, 10, 15 or 30\n");
+				return -EINVAL;
+			}
+		} else {
+			dev_info(&chip->client->dev,
+				 "DT property global-max-microamp is missing, using 15mA\n");
+			global_max_ma = 15;
+			global_max_ma_reg = 0b00;
+		}
+
+		ret = regmap_update_bits(chip->regmap,
+							AW2023_GCR2, AW2023_GCR2_IMAX_MASK,
+							global_max_ma_reg);
+
+		if (ret) {
+			dev_err(&chip->client->dev,
+				"Failed to set global max current\n");
+			return ret;
+		}
+
+		current_step_ua = global_max_ma * 1000 / 15;
+		current_step_max = 15;
+	} else {
+		// AW2013
+		current_step_ua = 5000;
+		current_step_max = 3;
+	}
 
 	count = of_get_available_child_count(np);
 	if (!count || count > AW2013_MAX_LEDS)
@@ -290,9 +358,9 @@ static int aw2013_probe_dt(struct aw2013 *chip)
 		init_data.fwnode = of_fwnode_handle(child);
 
 		if (!of_property_read_u32(child, "led-max-microamp", &imax)) {
-			led->imax = min_t(u32, imax / 5000, 3);
+			led->imax = min_t(u32, imax / current_step_ua, current_step_max);
 		} else {
-			led->imax = 1; // 5mA
+			led->imax = 1; // 5mA on AW2013
 			dev_info(&chip->client->dev,
 				 "DT property led-max-microamp is missing\n");
 		}
@@ -337,6 +405,12 @@ static int aw2013_probe(struct i2c_client *client)
 	mutex_init(&chip->mutex);
 	mutex_lock(&chip->mutex);
 
+	chip->chip = device_get_match_data(&client->dev);
+	if (!chip->chip) {
+		dev_err(&client->dev, "Unknown chip\n");
+		return -EINVAL;
+	}
+
 	chip->client = client;
 	i2c_set_clientdata(client, chip);
 
@@ -371,9 +445,9 @@ static int aw2013_probe(struct i2c_client *client)
 		goto error_reg;
 	}
 
-	if (chipid != AW2013_RSTR_CHIP_ID) {
-		dev_err(&client->dev, "Chip reported wrong ID: %x\n",
-			chipid);
+	if (chipid != chip->chip->chip_id) {
+		dev_err(&client->dev, "Chip reported wrong ID: %x != %x\n",
+			chipid, chip->chip->chip_id);
 		ret = -ENODEV;
 		goto error_reg;
 	}
@@ -410,8 +484,19 @@ static void aw2013_remove(struct i2c_client *client)
 	mutex_destroy(&chip->mutex);
 }
 
+static const struct aw20xx_chip aw2013_chip_info = {
+	.chip_id = AW2013_RSTR_CHIP_ID,
+	.current_mode = 0,
+};
+
+static const struct aw20xx_chip aw2023_chip_info = {
+	.chip_id = AW2023_RSTR_CHIP_ID,
+	.current_mode = 1,
+};
+
 static const struct of_device_id aw2013_match_table[] = {
-	{ .compatible = "awinic,aw2013", },
+	{ .compatible = "awinic,aw2013", .data = (void *)&aw2013_chip_info},
+	{ .compatible = "awinic,aw2023", .data = (void *)&aw2023_chip_info},
 	{ /* sentinel */ },
 };
 
@@ -429,5 +514,6 @@ static struct i2c_driver aw2013_driver = {
 module_i2c_driver(aw2013_driver);
 
 MODULE_AUTHOR("Nikita Travkin <nikitos.tr@gmail.com>");
+MODULE_AUTHOR("Reimu NotMoe <reimu@sudomaker.com>");
 MODULE_DESCRIPTION("AW2013 LED driver");
 MODULE_LICENSE("GPL v2");
