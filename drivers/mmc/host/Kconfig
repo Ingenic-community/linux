@@ -894,10 +894,42 @@ config MMC_JZ4740
 	depends on MIPS
 	help
 	  This selects support for the SD/MMC controller on Ingenic
-	  JZ4740, JZ4750, JZ4770 and JZ4780 SoCs.
+	  JZ4740, JZ4750, JZ4770 and JZ4780 SoCs. It also works on the
+	  X series in PIO mode and can be used for reducing the kernel
+	  image size.
 
 	  If you have a board based on such a SoC and with a SD/MMC slot,
 	  say Y or M here.
+
+config MMC_INGENIC
+	tristate "Ingenic X series SD/Multimedia Card Interface support"
+	depends on MIPS
+	select DMA_ENGINE
+	help
+	  This selects support for the SD/MMC controller on Ingenic
+	  X1000, X1600 and X1800 series SoCs, which utilises busmastering
+	  DMA for much higher performance.
+
+	  If you have a board based on such a SoC and with a SD/MMC slot,
+	  say Y or M here.
+
+config MMC_INGENIC_DEBUG
+	bool "Enable debugging"
+	depends on MMC_INGENIC
+	help
+	  This is useful when you're trying to improve this driver, or you
+	  have a faulty SD/MMC card and you want to hear some big noises in
+	  the kernel log when it dies.
+
+config MMC_INGENIC_DMA_DESCS
+	depends on MMC_INGENIC
+	int "Number of DMA descriptors"
+	range 32 1024
+	default "128"
+	help
+	  One DMA descriptor maps to one sg list entry.
+
+	  If unsure, just use the default value (128).
 
 config MMC_VUB300
 	tristate "VUB300 USB to SDIO/SD/MMC Host Controller support"
