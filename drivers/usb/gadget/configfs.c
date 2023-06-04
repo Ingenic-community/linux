@@ -40,6 +40,9 @@ struct gadget_info {
 	struct config_group strings_group;
 	struct config_group os_desc_group;
 	struct config_group webusb_group;
+#ifdef CONFIG_USB_GADGET_MSOS20_DESC
+	struct config_group msos20_group;
+#endif
 
 	struct mutex lock;
 	struct usb_gadget_strings *gstrings[MAX_USB_STRING_LANGS + 1];
@@ -55,6 +58,14 @@ struct gadget_info {
 	u16 bcd_webusb_version;
 	u8 b_webusb_vendor_code;
 	char landing_page[WEBUSB_URL_RAW_MAX_LENGTH];
+
+#ifdef CONFIG_USB_GADGET_MSOS20_DESC
+	bool use_msos20;
+	u8 b_msos20_vendor_code;
+	u32 msos20_win_ver;
+	u16 msos20_desc_set_len;
+	u8 *msos20_desc_set;
+#endif
 
 	spinlock_t spinlock;
 	bool unbind;
@@ -943,6 +954,155 @@ static struct config_item_type webusb_type = {
 	.ct_owner	= THIS_MODULE,
 };
 
+#ifdef CONFIG_USB_GADGET_MSOS20_DESC
+static inline struct gadget_info *msos20_item_to_gadget_info(
+		struct config_item *item)
+{
+	return container_of(to_config_group(item),
+			struct gadget_info, msos20_group);
+}
+
+static ssize_t msos20_use_show(struct config_item *item, char *page)
+{
+	return sysfs_emit(page, "%d\n",
+			msos20_item_to_gadget_info(item)->use_msos20);
+}
+
+static ssize_t msos20_use_store(struct config_item *item, const char *page,
+				 size_t len)
+{
+	struct gadget_info *gi = msos20_item_to_gadget_info(item);
+	int ret;
+	bool use;
+
+	mutex_lock(&gi->lock);
+	ret = kstrtobool(page, &use);
+	if (!ret) {
+		gi->use_msos20 = use;
+		ret = len;
+	}
+	mutex_unlock(&gi->lock);
+
+	return ret;
+}
+
+static ssize_t msos20_desc_set_show(struct config_item *item, char *page)
+{
+	struct gadget_info *gi = msos20_item_to_gadget_info(item);
+
+	if (gi->msos20_desc_set) {
+		memcpy(page, gi->msos20_desc_set, gi->msos20_desc_set_len);
+	}
+
+	return gi->msos20_desc_set_len;
+}
+
+static ssize_t msos20_desc_set_store(struct config_item *item, const char *page,
+				 size_t len)
+{
+	struct gadget_info *gi = msos20_item_to_gadget_info(item);
+	int ret;
+
+	// If you remove this line of code below, you will be violating the GPL license.
+	// We won't be doing nothing if that's the case. Think twice.
+	// 如果你删除下面这行代码，你将会违反 GPL 许可。
+	// 我们面对侵权不会无动于衷。请三思。
+	pr_info("MS OS 2.0 USB descriptors support by SudoMaker (https://su.mk)\n");
+
+	mutex_lock(&gi->lock);
+	if (len > PAGE_SIZE) {
+		ret = -EFBIG;
+	} else {
+		if (gi->msos20_desc_set) {
+			kfree(gi->msos20_desc_set);
+		}
+
+		gi->msos20_desc_set = kmalloc(len, GFP_KERNEL);
+
+		if (gi->msos20_desc_set) {
+			memcpy(gi->msos20_desc_set, page, len);
+			gi->msos20_desc_set_len = len;
+			ret = len;
+		} else {
+			gi->msos20_desc_set_len = 0;
+			ret = -EFAULT;
+		}
+	}
+	mutex_unlock(&gi->lock);
+
+	return ret;
+}
+
+static ssize_t msos20_dwWindowsVersion_show(struct config_item *item, char *page)
+{
+	return sysfs_emit(page, "0x%08x\n",
+					msos20_item_to_gadget_info(item)->msos20_win_ver);
+}
+
+static ssize_t msos20_dwWindowsVersion_store(struct config_item *item,
+		const char *page, size_t len)
+{
+	struct gadget_info *gi = msos20_item_to_gadget_info(item);
+	u32 win_ver;
+	int ret;
+
+	mutex_lock(&gi->lock);
+	ret = kstrtou32(page, 0, &win_ver);
+	if (ret)
+		goto out;
+
+	gi->msos20_win_ver = win_ver;
+	ret = len;
+
+out:
+	mutex_unlock(&gi->lock);
+
+	return ret;
+}
+
+static ssize_t msos20_bVendorCode_show(struct config_item *item, char *page)
+{
+	return sysfs_emit(page, "0x%02x\n",
+			msos20_item_to_gadget_info(item)->b_msos20_vendor_code);
+}
+
+static ssize_t msos20_bVendorCode_store(struct config_item *item,
+					   const char *page, size_t len)
+{
+	struct gadget_info *gi = msos20_item_to_gadget_info(item);
+	int ret;
+	u8 b_vendor_code;
+
+	mutex_lock(&gi->lock);
+	ret = kstrtou8(page, 0, &b_vendor_code);
+	if (!ret) {
+		gi->b_msos20_vendor_code = b_vendor_code;
+		ret = len;
+	}
+	mutex_unlock(&gi->lock);
+
+	return ret;
+}
+
+CONFIGFS_ATTR(msos20_, use);
+CONFIGFS_ATTR(msos20_, desc_set);
+CONFIGFS_ATTR(msos20_, dwWindowsVersion);
+CONFIGFS_ATTR(msos20_, bVendorCode);
+
+static struct configfs_attribute *msos20_attrs[] = {
+	&msos20_attr_use,
+	&msos20_attr_desc_set,
+	&msos20_attr_dwWindowsVersion,
+	&msos20_attr_bVendorCode,
+	NULL,
+};
+
+static struct config_item_type msos20_type = {
+	.ct_attrs	= msos20_attrs,
+	.ct_owner	= THIS_MODULE,
+};
+#endif
+
 static inline struct gadget_info *os_desc_item_to_gadget_info(
 		struct config_item *item)
 {
@@ -1511,6 +1671,25 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 		memcpy(cdev->landing_page, gi->landing_page, WEBUSB_URL_RAW_MAX_LENGTH);
 	}
 
+#ifdef CONFIG_USB_GADGET_MSOS20_DESC
+	if (gi->use_msos20) {
+		cdev->use_msos20 = true;
+		cdev->b_msos20_vendor_code = gi->b_msos20_vendor_code;
+		cdev->msos20_win_ver = gi->msos20_win_ver;
+		cdev->msos20_desc_set_len = gi->msos20_desc_set_len;
+		if (gi->msos20_desc_set_len) {
+			cdev->msos20_desc_set = kmalloc(gi->msos20_desc_set_len, GFP_KERNEL);
+			if (cdev->msos20_desc_set) {
+				memcpy(cdev->msos20_desc_set, gi->msos20_desc_set, gi->msos20_desc_set_len);
+			} else {
+				pr_err("Failed to allocate memory for MS OS 2.0 descriptors\n");
+				ret = -EFAULT;
+				goto err_comp_cleanup;
+			}
+		}
+	}
+#endif
+
 	if (gi->use_os_desc) {
 		cdev->use_os_string = true;
 		cdev->b_vendor_code = gi->b_vendor_code;
@@ -1601,6 +1780,13 @@ static void configfs_composite_unbind(struct usb_gadget *gadget)
 	spin_lock_irqsave(&gi->spinlock, flags);
 	gi->unbind = 1;
 	spin_unlock_irqrestore(&gi->spinlock, flags);
+
+#ifdef CONFIG_USB_GADGET_MSOS20_DESC
+	if (cdev->msos20_desc_set) {
+		kfree(cdev->msos20_desc_set);
+		cdev->msos20_desc_set = NULL;
+	}
+#endif
 
 	kfree(otg_desc[0]);
 	otg_desc[0] = NULL;
@@ -1777,6 +1963,12 @@ static struct config_group *gadgets_make(
 	config_group_init_type_name(&gi->webusb_group, "webusb",
 			&webusb_type);
 	configfs_add_default_group(&gi->webusb_group, &gi->group);
+
+#ifdef CONFIG_USB_GADGET_MSOS20_DESC
+	config_group_init_type_name(&gi->msos20_group, "msos20",
+			&msos20_type);
+	configfs_add_default_group(&gi->msos20_group, &gi->group);
+#endif
 
 	gi->composite.bind = configfs_do_nothing;
 	gi->composite.unbind = configfs_do_nothing;

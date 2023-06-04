@@ -26,6 +26,9 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 #include <linux/usb/webusb.h>
+#ifdef CONFIG_USB_GADGET_MSOS20_DESC
+#include <linux/usb/ms_os20.h>
+#endif
 #include <linux/log2.h>
 #include <linux/configfs.h>
 
@@ -484,6 +487,15 @@ struct usb_composite_dev {
 	u8				b_webusb_vendor_code;
 	char				landing_page[WEBUSB_URL_RAW_MAX_LENGTH];
 	unsigned int			use_webusb:1;
+
+#ifdef CONFIG_USB_GADGET_MSOS20_DESC
+	/* MS OS 2.0 */
+	u8				b_msos20_vendor_code;
+	u32				msos20_win_ver;
+	u8				*msos20_desc_set;
+	u16				msos20_desc_set_len;
+	unsigned int			use_msos20:1;
+#endif
 
 	/* private: */
 	/* internals */

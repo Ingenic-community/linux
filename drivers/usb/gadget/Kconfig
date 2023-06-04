@@ -46,6 +46,17 @@ menuconfig USB_GADGET
 
 if USB_GADGET
 
+config USB_GADGET_MSOS20_DESC
+	bool "MS OS 2.0 descriptors support (AGPLv3 licensed)"
+	help
+	   This enables support for Microsoft OS 2.0 descriptors.
+
+	   This feature is licensed in AGPLv3 and with optional additional
+	   permissions. Enabling this option will render the resulting kernel
+	   incompatible with GPLv2. As a result, you will be bound by the
+	   obligations of both GPLv2 and AGPLv3. The author does not tolerate
+	   license violations of any kind.
+
 config USB_GADGET_DEBUG
 	bool "Debugging messages (DEVELOPMENT)"
 	depends on DEBUG_KERNEL

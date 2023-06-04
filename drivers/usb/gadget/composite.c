@@ -5,6 +5,61 @@
  * Copyright (C) 2006-2008 David Brownell
  */
 
+/*
+	If you have enabled CONFIG_USB_GADGET_MSOS20_DESC, the following also applies:
+
+    MS OS 2.0 USB descriptors support
+
+    Copyright (C) 2022-2023 SudoMaker, Ltd.
+    Author: Reimu NotMoe <reimu@sudomaker.com>
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as
+    published by the Free Software Foundation, either version 3 of the
+    License, or (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+    SudoMaker, Ltd. hereby grants you additional permissions under section 7 of
+    the GNU Affero General Public License version 3 ("AGPLv3") in accordance
+    with the following terms:
+
+    1. You are permitted to modify and distribute this program or any
+    covered work without being required to distribute the source code of your
+    modifications, provided that the resulting executable (binary code) is
+    exclusively designed and intended to run on (a) hardware devices
+    manufactured by SudoMaker, Ltd., (b) hardware components manufactured by
+    SudoMaker, Ltd. which are parts of a larger hardware device, or (c)
+    hardware devices that are certified through the "Resonance Certification
+    Program" by SudoMaker, Ltd.
+
+    2. This additional permission is granted solely for the purpose of enabling
+    the use of this program on the aforementioned hardware devices or
+    components, and does not extend to any other use or distribution of this
+    program.
+
+    3. If you distribute or make available any executable (binary code) that
+    was modified under the terms of this additional permission, you must state
+    that it is distributed or made available solely for use on the
+    aforementioned hardware devices or components.
+
+    4. These additional permissions are granted to you in conjunction with the
+    AGPLv3 and does not affect other rights or obligations under that license.
+
+    By exercising any of the additional permissions granted here, you agree to
+    be bound by the terms and conditions mentioned above.
+*/
+
+#ifdef CONFIG_USB_GADGET_MSOS20_DESC
+#warning Because CONFIG_USB_GADGET_MSOS20_DESC is enabled, the kernel is also governed by the terms and conditions of the GNU AGPLv3 license.
+#endif
+
 /* #define VERBOSE_DEBUG */
 
 #include <linux/kallsyms.h>
@@ -855,6 +910,32 @@ static int bos_desc(struct usb_composite_dev *cdev)
 		else
 			webusb_cap_data->iLandingPage = WEBUSB_LANDING_PAGE_NOT_PRESENT;
 	}
+
+#ifdef CONFIG_USB_GADGET_MSOS20_DESC
+	/* MS OS 2.0 Capability descriptor */
+	if (cdev->use_msos20) {
+		struct usb_plat_dev_cap_descriptor *msos20_cap;
+		struct usb_msos20_desc_set_info_data *msos20_desc_set_info;
+		uuid_t msos20_uuid = MSOS20_UUID;
+
+		msos20_cap = cdev->req->buf + le16_to_cpu(bos->wTotalLength);
+		msos20_desc_set_info = (struct usb_msos20_desc_set_info_data *) msos20_cap->CapabilityData;
+		bos->bNumDeviceCaps++;
+		le16_add_cpu(&bos->wTotalLength,
+			USB_DT_USB_PLAT_DEV_CAP_SIZE(USB_MSOS20_DESC_SET_INFO_SIZE));
+
+		msos20_cap->bLength = USB_DT_USB_PLAT_DEV_CAP_SIZE(USB_MSOS20_DESC_SET_INFO_SIZE);
+		msos20_cap->bDescriptorType = USB_DT_DEVICE_CAPABILITY;
+		msos20_cap->bDevCapabilityType = USB_PLAT_DEV_CAP_TYPE;
+		msos20_cap->bReserved = 0;
+		export_uuid(msos20_cap->UUID, &msos20_uuid);
+
+		msos20_desc_set_info->dwWindowsVersion = cpu_to_le32(cdev->msos20_win_ver);
+		msos20_desc_set_info->wMSOSDescriptorSetTotalLength = cpu_to_le16(cdev->msos20_desc_set_len);
+		msos20_desc_set_info->bMS_VendorCode = cdev->b_msos20_vendor_code;
+		msos20_desc_set_info->bAltEnumCode = 0;
+	}
+#endif
 
 	return le16_to_cpu(bos->wTotalLength);
 }
@@ -1779,7 +1860,9 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 					cdev->desc.bcdUSB = cpu_to_le16(0x0210);
 				}
 			} else {
-				if (gadget->lpm_capable || cdev->use_webusb)
+				if (cdev->use_webusb)
+					cdev->desc.bcdUSB = cpu_to_le16(0x0210);
+				else if (gadget->lpm_capable)
 					cdev->desc.bcdUSB = cpu_to_le16(0x0201);
 				else
 					cdev->desc.bcdUSB = cpu_to_le16(0x0200);
@@ -2094,6 +2177,25 @@ unknown:
 
 			goto check_value;
 		}
+
+#ifdef CONFIG_USB_GADGET_MSOS20_DESC
+		/*
+		 * MS OS 2.0 descriptor handling
+		 */
+		if (cdev->use_msos20 &&
+			ctrl->bRequestType == (USB_DIR_IN | USB_TYPE_VENDOR) &&
+			w_index == MSOS20_DESCRIPTOR_INDEX &&
+			ctrl->bRequest == cdev->b_msos20_vendor_code) {
+
+			if (cdev->msos20_desc_set) {
+				memcpy(cdev->req->buf, cdev->msos20_desc_set, cdev->msos20_desc_set_len);
+			}
+
+			value = cdev->msos20_desc_set_len;
+
+			goto check_value;
+		}
+#endif
 
 		VDBG(cdev,
 			"non-core control req%02x.%02x v%04x i%04x l%d\n",
