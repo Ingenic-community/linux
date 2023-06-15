@@ -129,7 +129,11 @@
 
 /* The following flags affect the page allocator grouping pages by mobility */
 /* Objects are reclaimable */
+#ifndef CONFIG_SLUB_TINY
 #define SLAB_RECLAIM_ACCOUNT	((slab_flags_t __force)0x00020000U)
+#else
+#define SLAB_RECLAIM_ACCOUNT	0
+#endif
 #define SLAB_TEMPORARY		SLAB_RECLAIM_ACCOUNT	/* Objects are short-lived */
 
 /*
@@ -339,7 +343,11 @@ enum kmalloc_cache_type {
 #else
 	KMALLOC_CGROUP,
 #endif
+#ifndef CONFIG_SLUB_TINY
 	KMALLOC_RECLAIM,
+#else
+	KMALLOC_RECLAIM = KMALLOC_NORMAL,
+#endif
 #ifdef CONFIG_ZONE_DMA
 	KMALLOC_DMA,
 #endif
