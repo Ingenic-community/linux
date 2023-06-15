@@ -24,6 +24,7 @@
 #define REG_SSICR1	0x8
 #define REG_SSISR	0xc
 #define REG_SSIGR	0x18
+#define REG_SSIRCNT	0x1c
 
 #define REG_SSICR0_TENDIAN_MASK		(BIT(19) | BIT(18))
 #define REG_SSICR0_TENDIAN_POS		18
@@ -37,6 +38,7 @@
 #define REG_SSICR0_TEIE			BIT(12)
 #define REG_SSICR0_REIE			BIT(11)
 #define REG_SSICR0_LOOP			BIT(10)
+#define REG_SSICR0_RFINC		BIT(8)
 #define REG_SSICR0_EACLRUN		BIT(7)
 #define REG_SSICR0_FSEL			BIT(6)
 #define REG_SSICR0_TFLUSH		BIT(2)
@@ -270,6 +272,10 @@ static int spi_ingenic_dma_transfer(struct spi_controller *ctlr,
 		if (IS_ERR(rx_desc)) {
 			return PTR_ERR(rx_desc);
 		}
+
+		val = (0x0 << REG_SSICR1_TTRG_POS) | (0x0 << REG_SSICR1_RTRG_POS);
+	} else {
+		val = (0xf << REG_SSICR1_TTRG_POS) | (0x0 << REG_SSICR1_RTRG_POS);
 	}
 
 	if (xfer->tx_buf) {
@@ -284,7 +290,6 @@ static int spi_ingenic_dma_transfer(struct spi_controller *ctlr,
 		}
 	}
 
-	val = (0xf << REG_SSICR1_TTRG_POS) | (0x0 << REG_SSICR1_RTRG_POS);
 	val2 = REG_SSICR1_TTRG_MASK | REG_SSICR1_RTRG_MASK;
 	regmap_update_bits(priv->map, REG_SSICR1, val2, val);
 
@@ -294,11 +299,10 @@ static int spi_ingenic_dma_transfer(struct spi_controller *ctlr,
 	if (tx_desc)
 		dma_async_issue_pending(ctlr->dma_tx);
 
-	wait_for_completion(&priv->compl_xfer_done);
-
-	// if (wait_for_completion_interruptible(&priv->compl_xfer_done) < 0) {
-	// 	dev_err(priv->dev, "DMA operation cancelled");
-	// }
+	if (wait_for_completion_timeout(&priv->compl_xfer_done, 5000) == 0) {
+		dev_err(priv->dev, "DMA operation timed out, DMA driver is buggy or HW errata");
+		return -ETIMEDOUT;
+	}
 
 	regmap_update_bits(priv->map, REG_SSICR1, val2, 0);
 
