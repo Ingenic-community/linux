@@ -680,6 +680,7 @@ config INGENIC_TIMER
 	default MACH_INGENIC
 	depends on MIPS || COMPILE_TEST
 	depends on COMMON_CLK
+	select INGENIC_TCU_CLK
 	select MFD_SYSCON
 	select TIMER_OF
 	select IRQ_DOMAIN
