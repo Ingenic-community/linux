@@ -8,8 +8,15 @@
 #ifndef __ASM_MACH_GENERIC_IRQ_H
 #define __ASM_MACH_GENERIC_IRQ_H
 
+#ifdef CONFIG_MIPS_CUSTOM_NR_IRQS
+#ifdef NR_IRQS
+#undef NR_IRQS
+#endif
+#define NR_IRQS CONFIG_MIPS_CUSTOM_NR_IRQS
+#else
 #ifndef NR_IRQS
 #define NR_IRQS 256
+#endif
 #endif
 
 #ifdef CONFIG_I8259

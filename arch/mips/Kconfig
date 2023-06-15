@@ -3013,6 +3013,50 @@ config MIPS_O32_FP64_SUPPORT
 
 	  If unsure, say N.
 
+config MIPS_OVERRIDE_NR_IRQS
+	bool "Override maximum number of IRQs"
+	default n
+	help
+	  This allows you to override the NR_IRQS macro defined by your platform.
+
+	  In most MIPS platforms the original value is 256, which is more than
+	  needed.
+
+	  Each IRQ will use 128+ bytes, so you can save RAM by using a smaller
+	  value here.
+
+	  Do I need to warn you about the implications?
+
+config MIPS_CUSTOM_NR_IRQS
+	depends on MIPS_OVERRIDE_NR_IRQS
+	int "Maximum number of IRQs (4-512)"
+	range 4 512
+	default 32
+
+config MIPS_OVERRIDE_THREAD_SIZE
+	bool "Override kernel thread stack size"
+	default n
+	help
+	  This allows you to override the THREAD_SIZE macro.
+
+	  In 32bit MIPS platforms the original value is 8192, which is (often)
+	  more than needed.
+
+	  You can save a great deal of RAM by choosing a smaller value here.
+
+	  The kernel build system has stack usage checks, and you shoule be fine
+	  if there are no stack related warnings in the compilation process.
+
+config MIPS_CUSTOM_THREAD_SIZE
+	depends on MIPS_OVERRIDE_THREAD_SIZE
+	int "Kernel thread stack size (must be n * PAGE_SIZE)"
+	range 4096 65536
+	default 4096
+	help
+	  Must be n * PAGE_SIZE, and n must be a positive integer.
+
+	  Otherwise it won't work.
+
 config USE_OF
 	bool
 	select OF

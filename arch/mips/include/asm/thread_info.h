@@ -95,7 +95,11 @@ register unsigned long current_stack_pointer __asm__("sp");
 #define THREAD_SIZE_ORDER (0)
 #endif
 
+#ifndef CONFIG_MIPS_CUSTOM_THREAD_SIZE
 #define THREAD_SIZE (PAGE_SIZE << THREAD_SIZE_ORDER)
+#else
+#define THREAD_SIZE CONFIG_MIPS_CUSTOM_THREAD_SIZE
+#endif
 #define THREAD_MASK (THREAD_SIZE - 1UL)
 
 #define STACK_WARN	(THREAD_SIZE / 8)
