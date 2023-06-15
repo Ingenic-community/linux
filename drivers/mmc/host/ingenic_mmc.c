@@ -310,7 +310,6 @@ struct desc_hd {
  * @pending_events: Bitmask of events flagged by the interrupt handler
  *	to be processed by the state machine.
  * @iomem: Pointer to MSC registers.
- * @detect_timer: Timer used for debouncing card insert interrupts.
  * @request_timer: Timer used for preventing request time out.
  * @flags: Random state bits associated with the slot.
  * @cmdat: Variable for MSC_CMDAT register.
@@ -338,7 +337,6 @@ struct ingenic_mmc_host {
 	struct mmc_command			*cmd;
 	struct mmc_data				*data;
 	struct mmc_host				*mmc;
-	struct timer_list			detect_timer;
 	struct timer_list			request_timer;
 	struct tasklet_struct			tasklet;
 	struct sdma_desc			*dma_descs;
@@ -1424,7 +1422,7 @@ static int mmc_ingenic_probe(struct platform_device *pdev)
 
 	host->mmc = mmc;
 	spin_lock_init(&host->lock);
-	timer_setup(&host->request_timer, ingenic_mmc_request_timeout, 0);
+	timer_setup(&host->request_timer, ingenic_mmc_request_timeout, TIMER_IRQSAFE);
 
 	host->cmdat_def = CMDAT_RTRG_EQUALT_16 | CMDAT_TTRG_LESS_16 |
 						CMDAT_BUS_WIDTH_1BIT;
