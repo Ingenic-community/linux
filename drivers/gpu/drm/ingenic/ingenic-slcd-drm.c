@@ -10,7 +10,8 @@
 // with 8080/6800 style parallel bus. So creating a new driver is more logical.
 
 // The SLCDC do contain a stripped down LCDC from previous JZ series SoCs, but it's
-// only used for DMA management and most original LCDC registers are useless now.
+// only used for DMA management and most original LCDC registers are now useless,
+// **despite their existence in the reference manual** (X1000_PM.pdf).
 // In the terms of LCDC, it only contains one usable foreground and DMA channel.
 
 // PIO operations are usable as long as the clock is provided and SLCD related
@@ -21,6 +22,9 @@
 
 // - LCDCMD.FRM_EN is only effective in data descriptors (LCDCMD.CMD=0).
 // For command descriptors (LCDCMD.CMD=1) it's always enabled.
+
+// - LCDCMD<31:30> are only effective in data descriptors (LCDCMD.CMD=0).
+// For command descriptors (LCDCMD.CMD=1) no interrupts will fire.
 
 // - Descriptors must appear in pairs of command and data. e.g. cmd0->data0->
 // cmd1->data1->cmd0->data0. Otherwise it will not work.
@@ -35,6 +39,8 @@
 // sending commands.
 
 // - 24bit compressed mode (LCDCPOS.BPP0=6) does not work.
+
+// - TE waiting is still activated in PIO mode
 
 
 // Notes:
@@ -53,6 +59,8 @@
 // ChangeLog:
 
 // 2024-01-06: Fix RGB565 byte swap
+// 2024-04-11: Simplify colorspace selection & fix TE PIO bug
+// 2024-09-10: Examined Ingenic's old 3.10 kernel source and confirmed the absence of FG1
 
 
 #include "ingenic-slcd-drm.h"
@@ -70,6 +78,8 @@
 #include <linux/pm.h>
 #include <linux/regmap.h>
 #include <linux/gpio/consumer.h>
+#include <linux/timer.h>
+#include <linux/jiffies.h>
 
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
@@ -125,9 +135,11 @@ struct ingenic_dma_hwdescs {
 struct ingenic_slcd_runtime_data {
 	bool in_dma_mode;
 	bool vsync_enabled;
+	bool dma_running;
 	int rotation;
 	u32 dtimes_dma;
 	u32 pitch;
+	struct timer_list idle_timer;
 	struct drm_rect old_rect;
 };
 
@@ -135,7 +147,8 @@ struct ingenic_slcd_display {
 	u16 width;
 	u16 height;
 	u8 buswidth;
-	u8 bpp;
+	u8 bpp_vram;
+	u8 bpp_panel;
 	u16 rotation_default;
 	u16 reported_fps;
 
@@ -145,6 +158,7 @@ struct ingenic_slcd_display {
 
 	bool use_te;
 	bool te_active_low;
+	bool bus_speed_advantage;
 	bool cs_active_high;
 	bool wr_active_high;
 	bool dc_command_high;
@@ -177,8 +191,6 @@ struct ingenic_slcd_drm {
 	const struct drm_format_info *format;
 	struct drm_connector connector;
 	struct drm_simple_display_pipe pipe;
-	uint32_t formats[8];
-	size_t nformats;
 
 	// Hardware stuff
 	struct device *dev;
@@ -196,6 +208,12 @@ struct ingenic_slcd_drm_bridge {
 
 	struct drm_bus_cfg bus_cfg;
 };
+
+#if 0
+#define x1000_slcdc_debug(dev, str, ...)		dev_info(dev, str, ##__VA_ARGS__)
+#else
+#define x1000_slcdc_debug(dev, str, ...)		if (0) dev_info(dev, str, ##__VA_ARGS__)
+#endif
 
 static inline struct ingenic_slcd_drm_bridge *
 to_ingenic_slcdc_bridge(struct drm_encoder *encoder)
@@ -317,7 +335,11 @@ static inline void ingenic_slcdc_set_pio_mode(struct ingenic_slcd_drm *priv)
 	if (!priv->rt_data.in_dma_mode)
 		return;
 
-	regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL, JZ_SLCD_MCTRL_GATE_MASK, 0);
+	// Reduce clock speed when PIO mode
+	// See the comments in ingenic_slcdc_configure_hardware() for reason
+	clk_set_rate(priv->clk_lcd, 4687500);
+
+	regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL, JZ_SLCD_MCTRL_NOT_USE_TE|JZ_SLCD_MCTRL_GATE_MASK, JZ_SLCD_MCTRL_NOT_USE_TE);
 	regmap_update_bits(priv->map, JZ_REG_SLCD_MCFG_NEW, JZ_SLCD_MCFGNEW_DTIMES_MASK | JZ_SLCD_MCFGNEW_FMT_CONV, JZ_SLCD_MCFGNEW_DTIMES_1);
 
 	priv->rt_data.in_dma_mode = false;
@@ -331,6 +353,13 @@ static inline void ingenic_slcdc_set_dma_mode(struct ingenic_slcd_drm *priv)
 		return;
 
 	ingenic_slcdc_poll_busy(priv);
+
+	// Peripheral clock speed is double of bus speed
+	// See X1000_PM.pdf p.87
+	clk_set_rate(priv->clk_lcd, priv->disp.bus_max_speed * 2);
+
+	regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL, JZ_SLCD_MCTRL_NOT_USE_TE|JZ_SLCD_MCTRL_GATE_MASK,
+		(priv->disp.use_te ? 0 : JZ_SLCD_MCTRL_NOT_USE_TE)|JZ_SLCD_MCTRL_GATE_MASK);
 	regmap_update_bits(priv->map, JZ_REG_SLCD_MCFG_NEW, JZ_SLCD_MCFGNEW_DTIMES_MASK | JZ_SLCD_MCFGNEW_FMT_CONV, rt_data->dtimes_dma | JZ_SLCD_MCFGNEW_FMT_CONV);
 
 	priv->rt_data.in_dma_mode = true;
@@ -342,7 +371,7 @@ static const struct drm_driver ingenic_slcdc_driver_data = {
 	.driver_features	= DRIVER_MODESET | DRIVER_GEM | DRIVER_ATOMIC,
 	.name			= "ingenic-slcd-drm",
 	.desc			= "DRM module for Ingenic X1000 SLCD controller",
-	.date			= "20240117",
+	.date			= "20240411",
 	.major			= 1,
 	.minor			= 1,
 	.patchlevel		= 0,
@@ -363,12 +392,12 @@ static void ingenic_slcdc_configure_hwdesc(struct ingenic_slcd_drm *priv)
 	u32 write_cmd = 0x2c;
 	u16 sf = disp->sequence_format;
 
-	u32 cpos_dd = disp->bpp == 24 ? (5 << 27) : (4 << 27);
+	u32 cpos_dd = disp->bpp_vram == 32 ? (5 << 27) : (4 << 27);
 	u32 descsize_dd = (disp->width - 1) | ((disp->height - 1) << 12);
 	u32 len = disp->width * disp->height;
 
 	// This magic comes from Ingenic folks; NEEDS REVISIT
-	if (priv->disp.bpp == 16)
+	if (priv->disp.bpp_vram == 16)
 		len = (len + 1) / 2;
 
 	if (disp->write_sequence)
@@ -513,23 +542,37 @@ static void ingenic_slcdc_update_panel_window(struct ingenic_slcd_drm *priv, boo
 
 	kfree(seq);
 
-	dev_info(priv->dev, "panel window: [%u %u] [%u %u]\n", x1, x2, y1, y2);
+	x1000_slcdc_debug(priv->dev, "panel window: [%u %u] [%u %u]\n", x1, x2, y1, y2);
 }
 
 static inline void ingenic_slcdc_dma_cont(struct ingenic_slcd_drm *priv) {
+	if (priv->rt_data.dma_running)
+		return;
+	// Set DMAMODE to 0 (continually transfer data)
+	// Set DMASTART to 1
+	// Set DMATXEN to 1
 	u32 mask = JZ_SLCD_MCTRL_DMAMODE|JZ_SLCD_MCTRL_DMATXEN|JZ_SLCD_MCTRL_DMASTART;
 	u32 val = JZ_SLCD_MCTRL_DMATXEN|JZ_SLCD_MCTRL_DMASTART;
 	regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL, mask, val);
+	priv->rt_data.dma_running = true;
 }
 
 static inline void ingenic_slcdc_dma_pause(struct ingenic_slcd_drm *priv) {
-	u32 mask = JZ_SLCD_MCTRL_GATE_MASK|JZ_SLCD_MCTRL_DMAMODE;
-	regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL, mask, mask);
+	// Set DMAMODE to 1 (stop when one descriptor finished)
+	// Set DMASTART to 0
+	// Set DMATXEN to 0
+	u32 mask = JZ_SLCD_MCTRL_DMAMODE|JZ_SLCD_MCTRL_DMASTART|JZ_SLCD_MCTRL_DMATXEN;
+	u32 val = JZ_SLCD_MCTRL_DMAMODE;
+	regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL, mask, val);
 	ingenic_slcdc_poll_busy(priv);
+	priv->rt_data.dma_running = false;
 }
 
 static inline void ingenic_slcdc_dma_once(struct ingenic_slcd_drm *priv) {
-	u32 mask = JZ_SLCD_MCTRL_GATE_MASK|JZ_SLCD_MCTRL_DMAMODE|JZ_SLCD_MCTRL_DMATXEN|JZ_SLCD_MCTRL_DMASTART;
+	// Set DMAMODE to 1 (stop when one descriptor finished)
+	// Set DMASTART to 1
+	// Set DMATXEN to 1
+	u32 mask = JZ_SLCD_MCTRL_DMAMODE|JZ_SLCD_MCTRL_DMATXEN|JZ_SLCD_MCTRL_DMASTART;
 	regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL, mask, mask);
 }
 
@@ -540,10 +583,7 @@ static void ingenic_slcdc_controller_enable(struct ingenic_slcd_drm *priv) {
 }
 
 static void ingenic_slcdc_controller_disable(struct ingenic_slcd_drm *priv) {
-	regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL,
-		(JZ_SLCD_MCTRL_GATE_MASK|JZ_SLCD_MCTRL_DMATXEN|JZ_SLCD_MCTRL_DMASTART), JZ_SLCD_MCTRL_GATE_MASK);
-	ingenic_slcdc_poll_busy(priv);
-
+	ingenic_slcdc_dma_pause(priv);
 	ingenic_slcdc_quick_disable(priv);
 	ingenic_slcdc_poll_disable(priv);
 }
@@ -551,14 +591,19 @@ static void ingenic_slcdc_controller_disable(struct ingenic_slcd_drm *priv) {
 static irqreturn_t ingenic_slcdc_irq_handler(int irq, void *arg)
 {
 	struct ingenic_slcd_drm *priv = drm_device_get_priv(arg);
+	static uint64_t last_time;
+	uint64_t now_time;
 	unsigned int state;
 
 	regmap_read(priv->map, JZ_REG_LCD_STATE, &state);
 
-	if (state & JZ_LCD_STATE_EOF_IRQ) {
-		// printk("EOF\n");
-		regmap_update_bits(priv->map, JZ_REG_LCD_STATE,
+	regmap_update_bits(priv->map, JZ_REG_LCD_STATE,
 			   JZ_LCD_STATE_EOF_IRQ, 0);
+
+	if (state & JZ_LCD_STATE_EOF_IRQ) {
+		now_time = ktime_get_ns();
+		x1000_slcdc_debug(priv->dev, "EOF, %llu ns\n", now_time - last_time);
+		last_time = now_time;
 		drm_crtc_handle_vblank(&priv->pipe.crtc);
 	}
 
@@ -678,32 +723,43 @@ static int ingenic_slcdc_properties_load_examine(struct ingenic_slcd_drm *priv)
 		return -EINVAL;
 	}
 
-	disp->bpp = ingenic_slcdc_property_value(dev, "bpp");
+	disp->bpp_vram = ingenic_slcdc_property_value(dev, "bpp-vram");
 
-	switch (disp->bpp) {
+	switch (disp->bpp_vram) {
 	case 16:
 		priv->format = drm_format_info(DRM_FORMAT_RGB565);
 		rt_data->pitch = disp->width * 2;
 		break;
-	case 24:
-		priv->format = drm_format_info(DRM_FORMAT_ARGB8888);
+	case 32:
+		priv->format = drm_format_info(DRM_FORMAT_XRGB8888);
 		rt_data->pitch = disp->width * 4;
 		break;
 	default:
-		dev_err(dev, "bpp must be 16, 24\n");
+		dev_err(dev, "bpp-vram must be 16 (RGB565) or 32 (XRGB8888)\n");
 		return -EINVAL;
 	}
 
-	if (disp->bpp == 16) {
+	disp->bpp_panel = ingenic_slcdc_property_value(dev, "bpp-panel");
+
+	switch (disp->bpp_panel) {
+	case 8:
+		rt_data->dtimes_dma = JZ_SLCD_MCFGNEW_DTIMES_1;
+		break;
+	case 16:
 		if (disp->buswidth == 16)
 			rt_data->dtimes_dma = JZ_SLCD_MCFGNEW_DTIMES_1;
 		else
 			rt_data->dtimes_dma = JZ_SLCD_MCFGNEW_DTIMES_2;
-	} else { // disp->bpp == 24
+		break;
+	case 24:
 		if (disp->buswidth == 16)
 			rt_data->dtimes_dma = JZ_SLCD_MCFGNEW_DTIMES_2;
 		else
 			rt_data->dtimes_dma = JZ_SLCD_MCFGNEW_DTIMES_3;
+		break;
+	default:
+		dev_err(dev, "bpp-panel must be 8, 16 or 24\n");
+		return -EINVAL;
 	}
 
 	disp->debug = ingenic_slcdc_property_value(dev, "debug");
@@ -721,6 +777,8 @@ static int ingenic_slcdc_properties_load_examine(struct ingenic_slcd_drm *priv)
 	rt_data->rotation = -1;
 
 	disp->use_te = ingenic_slcdc_property_value(dev, "use-te");
+	disp->te_active_low = ingenic_slcdc_property_value(dev, "te-active-low");
+	disp->bus_speed_advantage = ingenic_slcdc_property_value(dev, "bus-speed-advantage");
 
 	disp->bus_max_speed = ingenic_slcdc_property_value(dev, "bus-max-speed");
 
@@ -729,13 +787,6 @@ static int ingenic_slcdc_properties_load_examine(struct ingenic_slcd_drm *priv)
 	// 1 - 16bit to 2x8bit, big endian. e.g. 0x2c00 -> 0x2c 0x00 (such as NT35510 and R61509V)
 	// 2 - 16bit to 2x8bit, little endian. e.g. 0x2c00 -> 0x00 0x2c
 	disp->sequence_format = ingenic_slcdc_property_value(dev, "sequence-format");
-
-	// Peripheral clock speed is double of bus speed
-	// See X1000_PM.pdf p.87
-	if (disp->bus_max_speed < 2343750 || disp->bus_max_speed > 50000000) {
-		dev_err(dev, "bus-max-speed must be within 2343750 to 50000000\n");
-		return -EINVAL;
-	}
 
 	ingenic_slcdc_property_array_value(dev, "init-sequence", &disp->init_sequence, NULL);
 	ingenic_slcdc_property_array_value(dev, "sleep-sequence", &disp->sleep_sequence, NULL);
@@ -776,24 +827,24 @@ static void ingenic_slcdc_execute_panel_sequence(struct ingenic_slcd_drm *priv, 
 			switch (type) {
 			case 1: // Command
 				ingenic_slcdc_pio_write_command(priv, value);
-				dev_info(priv->dev, "command: %x\n", value);
+				x1000_slcdc_debug(priv->dev, "command: %x\n", value);
 				break;
 			case 2: // Data
 				ingenic_slcdc_pio_write_data(priv, value);
-				dev_info(priv->dev, "data: %x\n", value);
+				x1000_slcdc_debug(priv->dev, "data: %x\n", value);
 				break;
 			case 3: // Sleep (ms)
-				dev_info(priv->dev, "sleep: %x\n", value);
+				x1000_slcdc_debug(priv->dev, "sleep: %x\n", value);
 				msleep(value);
 				break;
 			default:
-				dev_info(priv->dev, "unknown type %x: %x\n", type, value);
+				x1000_slcdc_debug(priv->dev, "unknown type %x: %x\n", type, value);
 				break;
 			}
 		} else { // Even: Type
 			type = seq[i];
 			if (type == 0) {
-				dev_info(priv->dev, "done, cnt=%u\n", i);
+				x1000_slcdc_debug(priv->dev, "done, cnt=%u\n", i);
 				break;
 			}
 		}
@@ -811,7 +862,7 @@ static void ingenic_slcdc_reset_panel(struct ingenic_slcd_drm *priv)
 	if (!disp->gpio_reset)
 		return;
 
-	dev_info(priv->dev, "resetting panel...\n");
+	x1000_slcdc_debug(priv->dev, "resetting panel...\n");
 
 	gpiod_set_value_cansleep(disp->gpio_reset, 1);
 	msleep(50);
@@ -823,6 +874,20 @@ static int ingenic_slcdc_configure_hardware(struct ingenic_slcd_drm *priv)
 {
 	struct ingenic_slcd_display *disp = &priv->disp;
 	u32 cwidth, dwidth;
+	int ret;
+
+	// At the init stage we reduce the bus speed as much as we can to
+	// accommodate controllers that need PLL configuration (such as the SSD1963).
+	// 600MHz / 128 = 4.6875MHz. The MPLL is usually 600MHz and the divider has
+	// 8bit precision so we can always get a reasonably low frequency even you
+	// have doubled or halved MPLL's speed.
+	clk_set_rate(priv->clk_lcd, 4687500);
+
+	ret = clk_prepare_enable(priv->clk_lcd);
+	if (ret) {
+		dev_err(priv->dev, "Unable to start SLCDC clock\n");
+		return ret;
+	}
 
 	ingenic_slcdc_quick_disable(priv);
 	ingenic_slcdc_poll_busy(priv);
@@ -852,10 +917,14 @@ static int ingenic_slcdc_configure_hardware(struct ingenic_slcd_drm *priv)
 	regmap_update_bits(priv->map, JZ_REG_SLCD_MCFG, JZ_SLCD_MCFG_CWIDTH_MASK, cwidth);
 	regmap_update_bits(priv->map, JZ_REG_SLCD_MCFG_NEW, JZ_SLCD_MCFGNEW_DWIDTH_MASK, dwidth);
 	regmap_update_bits(priv->map, JZ_REG_SLCD_MCFG_NEW, JZ_SLCD_MCFGNEW_CMD_9BIT, 0);
-	regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL, JZ_SLCD_MCTRL_NOT_USE_TE,
-		disp->use_te ? 0 : JZ_SLCD_MCTRL_NOT_USE_TE);
+
+	// Configure TE but keep it disabled in PIO stages
+	regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL, JZ_SLCD_MCTRL_NOT_USE_TE | JZ_SLCD_MCTRL_NARROW_TE,
+		JZ_SLCD_MCTRL_NOT_USE_TE | JZ_SLCD_MCTRL_NARROW_TE);
 	regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL, JZ_SLCD_MCTRL_TE_INV,
 		disp->te_active_low ? JZ_SLCD_MCTRL_TE_INV : 0);
+	regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL, JZ_SLCD_MCTRL_FAST_MODE,
+		disp->bus_speed_advantage ? JZ_SLCD_MCTRL_FAST_MODE : 0);
 	regmap_update_bits(priv->map, JZ_REG_SLCD_MCFG_NEW, JZ_SLCD_MCFGNEW_CSPOL,
 		disp->cs_active_high ? JZ_SLCD_MCFGNEW_CSPOL : 0);
 	regmap_update_bits(priv->map, JZ_REG_SLCD_MCFG_NEW, JZ_SLCD_MCFGNEW_6800_MD,
@@ -864,12 +933,9 @@ static int ingenic_slcdc_configure_hardware(struct ingenic_slcd_drm *priv)
 		disp->dc_command_high ? JZ_SLCD_MCFGNEW_RSPOL : 0);
 	regmap_update_bits(priv->map, JZ_REG_SLCD_MCFG_NEW, JZ_SLCD_MCFGNEW_FMT_CONV, 0);
 
-	clk_set_rate(priv->clk_lcd, 2343750 * 2);
-
 	ingenic_slcdc_reset_panel(priv);
+	priv->rt_data.in_dma_mode = true; // Stupid hack
 	ingenic_slcdc_execute_panel_sequence(priv, priv->disp.init_sequence);
-
-	clk_set_rate(priv->clk_lcd, disp->bus_max_speed * 2);
 
 	regmap_update_bits(priv->map, JZ_REG_LCD_CTRL, JZ_LCD_CTRL_BURST_MASK,
 		JZ_LCD_CTRL_BURST_64);
@@ -973,7 +1039,7 @@ static void ingenic_slcdc_set_rotation(struct ingenic_slcd_drm *priv,
 		break;
 	}
 
-	dev_info(priv->dev, "panel rotation changed to %d\n", deg);
+	x1000_slcdc_debug(priv->dev, "panel rotation changed to %d\n", deg);
 
 	ingenic_slcdc_execute_panel_sequence(priv, seq);
 	ingenic_slcdc_update_panel_window(priv, r);
@@ -1044,11 +1110,24 @@ ingenic_slcdc_process_crtc_vblank_event(struct drm_crtc *crtc) {
 		crtc_state->event = NULL;
 
 		spin_lock_irq(&crtc->dev->event_lock);
-		if (drm_crtc_vblank_get(crtc) == 0)
+		if (crtc->state->active && drm_crtc_vblank_get(crtc) == 0)
 			drm_crtc_arm_vblank_event(crtc, vb_event);
 		else
 			drm_crtc_send_vblank_event(crtc, vb_event);
 		spin_unlock_irq(&crtc->dev->event_lock);
+	}
+}
+
+static void
+ingenic_slcdc_idle_timer_callback(struct timer_list *t)
+{
+	struct ingenic_slcd_runtime_data *rt_data = from_timer(rt_data, t, idle_timer);
+	struct ingenic_slcd_drm *priv = container_of(rt_data, struct ingenic_slcd_drm, rt_data);
+
+	if (rt_data->dma_running) {
+		regmap_update_bits(priv->map, JZ_REG_SLCD_MCTRL, JZ_SLCD_MCTRL_DMAMODE, JZ_SLCD_MCTRL_DMAMODE);
+		rt_data->dma_running = false;
+		// printk("idle\n");
 	}
 }
 
@@ -1064,33 +1143,22 @@ ingenic_slcdc_simple_display_pipe_enable(struct drm_simple_display_pipe *pipe,
 	struct drm_framebuffer *fb = plane_state->fb;
 	struct drm_display_mode *mode = &crtc_state->mode;
 
-	dma_addr_t dst;
-	int idx, rotation;
+	dma_addr_t dst = 0;
+	int rotation;
 
-	if (!fb)
-		return;
-
-	if (!drm_dev_enter(dev, &idx))
-		return;
+	timer_setup(&rt_data->idle_timer, ingenic_slcdc_idle_timer_callback, 0);
 
 	ingenic_slcdc_dma_pause(priv);
-
 	rotation = ingenic_slcdc_rotation_from_mode(priv, mode);
-	ingenic_slcdc_set_rotation(priv, rotation);
-	rt_data->rotation = rotation;
+	if (rt_data->rotation != rotation) {
+		ingenic_slcdc_set_rotation(priv, rotation);
+		rt_data->rotation = rotation;
+	}
 	ingenic_slcdc_execute_panel_sequence(priv, priv->disp.enable_sequence);
 
-	dst = drm_fb_dma_get_gem_addr(fb, plane_state, 0);
-	ingenic_slcdc_update_hwdesc_fb_phys(priv, dst);
-	ingenic_slcdc_set_dma_mode(priv);
-	ingenic_slcdc_dma_cont(priv);
 	drm_crtc_vblank_on(crtc);
 
-	ingenic_slcdc_process_crtc_vblank_event(crtc);
-
-	drm_dev_exit(idx);
-
-	dev_info(priv->dev, "display enabled, fb addr: 0x%08x, mode name: %s\n", dst, mode->name);
+	x1000_slcdc_debug(priv->dev, "display enabled, fb addr: 0x%08x, mode name: %s\n", dst, mode->name);
 }
 
 static void
@@ -1099,19 +1167,24 @@ ingenic_slcdc_simple_display_pipe_disable(struct drm_simple_display_pipe *pipe)
 	struct drm_crtc *crtc = &pipe->crtc;
 	struct drm_device *dev = crtc->dev;
 	struct ingenic_slcd_drm *priv = drm_device_get_priv(dev);
-	int idx;
+	struct drm_crtc_state *crtc_state = crtc->state;
+	struct drm_pending_vblank_event *vb_event = crtc_state->event;
 
-	if (!drm_dev_enter(dev, &idx))
-		return;
+	del_timer(&priv->rt_data.idle_timer);
+
+	drm_crtc_vblank_off(crtc);
+
+	if (vb_event) {
+		crtc_state->event = NULL;
+		spin_lock_irq(&crtc->dev->event_lock);
+		drm_crtc_send_vblank_event(crtc, vb_event);
+		spin_unlock_irq(&crtc->dev->event_lock);
+	}
 
 	ingenic_slcdc_dma_pause(priv);
-	drm_crtc_vblank_off(crtc);
-	ingenic_slcdc_process_crtc_vblank_event(crtc);
 	ingenic_slcdc_execute_panel_sequence(priv, priv->disp.disable_sequence);
 
-	drm_dev_exit(idx);
-
-	dev_info(priv->dev, "display disabled\n");
+	x1000_slcdc_debug(priv->dev, "display disabled\n");
 }
 
 static void
@@ -1126,35 +1199,35 @@ ingenic_slcdc_simple_display_pipe_update(struct drm_simple_display_pipe *pipe,
 	struct drm_crtc_state *crtc_state;
 	struct drm_framebuffer *fb = plane_state->fb;
 	dma_addr_t dst;
-	int idx, rotation;
+	int rotation;
 
-	if (!fb)
-		return;
-
-	if (!drm_dev_enter(dev, &idx))
-		return;
-
-	crtc_state = plane_state->crtc->state;
-	dst = drm_fb_dma_get_gem_addr(fb, plane_state, 0);
-	ingenic_slcdc_update_hwdesc_fb_phys(priv, dst);
 	ingenic_slcdc_process_crtc_vblank_event(crtc);
 
-	if (drm_atomic_crtc_needs_modeset(crtc_state)) {
-		rotation = ingenic_slcdc_rotation_from_mode(priv, &crtc_state->mode);
+	if (fb) {
+		crtc_state = plane_state->crtc->state;
+		dst = drm_fb_dma_get_gem_addr(fb, plane_state, 0);
+		ingenic_slcdc_update_hwdesc_fb_phys(priv, dst);
 
-		ingenic_slcdc_dma_pause(priv);
-		ingenic_slcdc_execute_panel_sequence(priv, priv->disp.disable_sequence);
-		ingenic_slcdc_set_rotation(priv, rotation);
-		ingenic_slcdc_execute_panel_sequence(priv, priv->disp.enable_sequence);
-		ingenic_slcdc_set_dma_mode(priv);
-		ingenic_slcdc_dma_cont(priv);
-		rt_data->rotation = rotation;
-		dev_info(priv->dev, "modeset done\n");
+		if (drm_atomic_crtc_needs_modeset(crtc_state)) {
+			rotation = ingenic_slcdc_rotation_from_mode(priv, &crtc_state->mode);
+
+			ingenic_slcdc_dma_pause(priv);
+			ingenic_slcdc_set_rotation(priv, rotation);
+			ingenic_slcdc_execute_panel_sequence(priv, priv->disp.enable_sequence);
+
+			rt_data->rotation = rotation;
+			x1000_slcdc_debug(priv->dev, "modeset done\n");
+		}
+
+		x1000_slcdc_debug(priv->dev, "display updated, fb addr: 0x%08x\n", dst);
+	} else {
+		x1000_slcdc_debug(priv->dev, "display updated\n");
 	}
 
-	drm_dev_exit(idx);
+	ingenic_slcdc_set_dma_mode(priv);
+	ingenic_slcdc_dma_cont(priv);
 
-	dev_info(priv->dev, "display updated, fb addr: 0x%08x\n", dst);
+	mod_timer(&rt_data->idle_timer, jiffies + msecs_to_jiffies(100));
 }
 
 static int
@@ -1166,6 +1239,7 @@ ingenic_slcdc_simple_display_pipe_enable_vblank(struct drm_simple_display_pipe *
 			   JZ_LCD_CTRL_EOF_IRQ, JZ_LCD_CTRL_EOF_IRQ);
 
 	priv->rt_data.vsync_enabled = true;
+	x1000_slcdc_debug(priv->dev, "HW VSYNC enabled\n");
 
 	return 0;
 }
@@ -1177,8 +1251,11 @@ ingenic_slcdc_simple_display_pipe_disable_vblank(struct drm_simple_display_pipe 
 
 	regmap_update_bits(priv->map, JZ_REG_LCD_CTRL,
 			   JZ_LCD_CTRL_EOF_IRQ, 0);
+	regmap_update_bits(priv->map, JZ_REG_LCD_STATE,
+			   JZ_LCD_STATE_EOF_IRQ, 0);
 
 	priv->rt_data.vsync_enabled = false;
+	x1000_slcdc_debug(priv->dev, "HW VSYNC disabled\n");
 }
 
 static const struct drm_simple_display_pipe_funcs
@@ -1192,41 +1269,19 @@ ingenic_slcdc_simple_display_pipe_funcs = {
 };
 
 static const struct drm_mode_config_funcs ingenic_slcdc_mode_config_funcs = {
-	.fb_create = drm_gem_fb_create,
+	.fb_create = drm_gem_fb_create_with_dirty,
 	.atomic_check = drm_atomic_helper_check,
 	.atomic_commit = drm_atomic_helper_commit,
 };
 
-static const uint32_t *ingenic_slcdc_device_formats(struct ingenic_slcd_drm *priv,
-						size_t *nformats_out)
-{
-	struct drm_device *dev = &priv->drm;
-	size_t i;
-
-	if (priv->nformats)
-		goto out; /* don't rebuild list on recurring calls */
-
-	/* native format goes first */
-	priv->formats[0] = priv->format->format;
-	priv->nformats = 1;
-
+static const struct drm_mode_config_helper_funcs ingenic_slcdc_mode_config_helpers = {
 	/*
-	 * TODO: The simpledrm driver converts framebuffers to the native
-	 * format when copying them to device memory. If there are more
-	 * formats listed than supported by the driver, the native format
-	 * is not supported by the conversion helpers. Therefore *only*
-	 * support the native format and add a conversion helper ASAP.
+	 * Using this function is necessary to commit atomic updates
+	 * that need the CRTC to be enabled before a commit, as is
+	 * the case with e.g. DSI displays.
 	 */
-	if (drm_WARN_ONCE(dev, i != priv->nformats,
-			  "format conversion helpers required for %p4cc",
-			  &priv->format->format)) {
-		priv->nformats = 1;
-	}
-
-out:
-	*nformats_out = priv->nformats;
-	return priv->formats;
-}
+	.atomic_commit_tail = drm_atomic_helper_commit_tail_rpm,
+};
 
 static int ingenic_slcdc_init_modeset(struct ingenic_slcd_drm *priv)
 {
@@ -1236,8 +1291,7 @@ static int ingenic_slcdc_init_modeset(struct ingenic_slcd_drm *priv)
 	struct drm_connector *connector = &priv->connector;
 	struct drm_simple_display_pipe *pipe = &priv->pipe;
 
-	const uint32_t *formats;
-	size_t nformats;
+	uint32_t format = priv->format->format;
 	int ret;
 
 	ret = drmm_mode_config_init(drm);
@@ -1252,6 +1306,7 @@ static int ingenic_slcdc_init_modeset(struct ingenic_slcd_drm *priv)
 	drm->mode_config.max_height = 1024;
 	drm->mode_config.preferred_depth = priv->format->cpp[0] * 8;
 	drm->mode_config.funcs = &ingenic_slcdc_mode_config_funcs;
+	drm->mode_config.helper_private = &ingenic_slcdc_mode_config_helpers;
 
 	ret = drm_connector_init(drm, connector, &ingenic_slcdc_connector_funcs,
 				 DRM_MODE_CONNECTOR_DPI);
@@ -1265,10 +1320,8 @@ static int ingenic_slcdc_init_modeset(struct ingenic_slcd_drm *priv)
 						       DRM_MODE_PANEL_ORIENTATION_UNKNOWN,
 						       disp->width, disp->height);
 
-	formats = ingenic_slcdc_device_formats(priv, &nformats);
-
 	ret = drm_simple_display_pipe_init(drm, pipe, &ingenic_slcdc_simple_display_pipe_funcs,
-					   formats, nformats, ingenic_slcdc_format_modifiers,
+					   &format, 1, ingenic_slcdc_format_modifiers,
 					   connector);
 
 	if (ret) {
@@ -1371,18 +1424,6 @@ static int ingenic_slcdc_bind(struct device *dev)
 	ret = devm_request_irq(dev, irq, ingenic_slcdc_irq_handler, 0, drm->driver->name, drm);
 	if (ret) {
 		dev_err(dev, "Unable to install IRQ handler\n");
-		return ret;
-	}
-
-	ret = clk_set_rate(priv->clk_lcd, disp->bus_max_speed * 2);
-	if (ret) {
-		dev_err(dev, "Unable to set SLCDC clock speed\n");
-		return ret;
-	}
-
-	ret = clk_prepare_enable(priv->clk_lcd);
-	if (ret) {
-		dev_err(dev, "Unable to start SLCDC clock\n");
 		return ret;
 	}
 

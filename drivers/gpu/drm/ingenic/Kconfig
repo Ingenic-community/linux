@@ -33,6 +33,16 @@ config DRM_INGENIC_X1000_SLCDC
 
 	  If M is selected the module will be called ingenic-slcd-drm.
 
+if DRM_INGENIC_X1000_SLCDC
+
+config DRM_INGENIC_X1000_SLCDC_DEBUG
+	bool "Enable debugging"
+	depends on DRM_INGENIC_X1000_SLCDC
+	help
+	  Choose this option to see all panel PIO operations in kernel log.
+
+endif
+
 config DRM_INGENIC_IPU
 	bool "IPU support for Ingenic SoCs"
 	help
