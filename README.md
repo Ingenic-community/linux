@@ -4,6 +4,13 @@
 
 Linux kernel source tree with the latest features and modifications to unleash the full potential of Ingenic processors.
 
+## Note
+Last updated: 2025-03-27
+
+Ingenic has ported Linux 6.6 LTS to XBurst2 processors. You can search on web or ask their sales for the source code.
+
+This repo will only focus on XBurst1 processors from now on and aim to make use of their unique capabilites.
+
 ## Purpose
 Adding stuff to upstream is a lengthy and tough job. Maintaining a separate repo can make new features available to people in a timely manner.
 
